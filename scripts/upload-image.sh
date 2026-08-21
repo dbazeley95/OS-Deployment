@@ -20,7 +20,6 @@ local_file="$(realpath "$1")"
 
 (cd "$(dirname "$0")/../worker" && npx wrangler r2 object put \
   "${bucket}/${r2_key}" \
-  --file "${local_file}" \
-  --remote)
+  --file "${local_file}")
 
 echo "Uploaded ${local_file} -> r2://${bucket}/${r2_key}"

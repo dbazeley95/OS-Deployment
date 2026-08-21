@@ -35,5 +35,5 @@ jobs:
           for f in ../boot/winpe/*.ps1; do
             name="$(basename "$f")"
             echo "Uploading winpe/$name..."
-            npx wrangler r2 object put "os-deployment-images/winpe/$name" --file "$f" --remote
+            npx wrangler r2 object put "os-deployment-images/winpe/$name" --file "$f"
           done

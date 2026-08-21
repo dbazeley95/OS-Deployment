@@ -16,16 +16,26 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history needed to count today's commits below
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm install
+      - name: Compute version (YYYY.MM.DD.N - N is the Nth commit to main today, UTC)
+        id: version
+        run: |
+          date="$(date -u +%Y.%m.%d)"
+          day_start="$(date -u +%Y-%m-%d)T00:00:00Z"
+          count="$(git log --since="$day_start" --oneline | wc -l)"
+          echo "version=${date}.${count}" >> "$GITHUB_OUTPUT"
       - name: Build
         run: npm run build
         env:
           VITE_API_BASE: ${{ vars.WORKER_API_BASE }}
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
           VITE_COMMIT_SHA: ${{ github.sha }}
       - name: Ensure Pages project exists
         uses: cloudflare/wrangler-action@v3

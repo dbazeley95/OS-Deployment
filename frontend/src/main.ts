@@ -1,8 +1,9 @@
 import { api, ApiError, type AppEntry, type OsProfile, type TaskSequence } from "./api";
 
 const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
+const appVersion = import.meta.env.VITE_APP_VERSION;
 const commitSha = import.meta.env.VITE_COMMIT_SHA;
-versionBadge.textContent = commitSha ? commitSha.slice(0, 7) : "dev";
+versionBadge.textContent = appVersion || "dev";
 versionBadge.title = commitSha ? `Build ${commitSha}` : "Local dev build";
 
 const errorEl = document.querySelector<HTMLElement>("#error")!;

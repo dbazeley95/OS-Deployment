@@ -21,17 +21,17 @@ Same `embed.ipxe` as the other boot paths (see `../proxy-dhcp/embed.ipxe` and
 `/images/*` route:
 
 ```bash
-scripts/upload-image.sh ./ipxe.efi ipxe/ipxe.efi
+scripts/upload-image.sh ./ipxe.efi ipxe.efi
 ```
 
-That makes it available at `https://api.osd.xcet.uk/images/ipxe/ipxe.efi`.
+That makes it available at `https://api.osd.xcet.uk/images/ipxe.efi`.
 
 ## Configure each machine
 
 1. Enter UEFI/BIOS setup on the target machine.
 2. Find the HTTP(S) Boot setting (varies by OEM - often under "Network
    Boot", "Network Stack Configuration", or similar). Enable it.
-3. Set the boot URI to `https://api.osd.xcet.uk/images/ipxe/ipxe.efi`.
+3. Set the boot URI to `https://api.osd.xcet.uk/images/ipxe.efi`.
 4. Set network boot / HTTP(S) Boot as the (or a) boot option, and boot.
 
 Some firmware instead offers this via DHCP (client identifies itself with

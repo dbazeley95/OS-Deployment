@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Uploads a local file into the os-deployment-images R2 bucket at the given key.
 # Usage: scripts/upload-image.sh <local-file> <r2-key>
-# Example: scripts/upload-image.sh ./install-trimmed.wim windows-11/sources/install.wim
+# Example: scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then

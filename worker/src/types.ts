@@ -2,6 +2,7 @@ export type Bindings = {
   DB: D1Database;
   IMAGES: R2Bucket;
   ALLOWED_ORIGIN: string;
+  PASSWORD_PEPPER: string;
 };
 
 export type JobStatus = "pending" | "booted" | "installing" | "complete" | "failed";
@@ -20,6 +21,7 @@ export interface DeploymentJob {
   os_profile: string;
   status: JobStatus;
   log: string | null;
+  technician: string | null;
   created_at: string;
   updated_at: string;
 }

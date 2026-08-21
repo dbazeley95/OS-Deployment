@@ -5,54 +5,288 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OS Deployment</title>
     <style>
-      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
-      h1 { font-size: 1.4rem; }
-      section { margin-bottom: 2rem; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
-      form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-      input, select, button { padding: 0.4rem 0.6rem; }
-      .status-pending { color: #a66a00; }
-      .status-booted { color: #0066cc; }
-      .status-installing { color: #0066cc; }
-      .status-complete { color: #1a7f37; }
-      .status-failed { color: #cc0000; }
-      #error { color: #cc0000; }
+      :root {
+        --bg: #f5f6f8;
+        --surface: #ffffff;
+        --border: #e2e5ea;
+        --text: #1a1d23;
+        --text-muted: #656b76;
+        --accent: #2563eb;
+        --accent-text: #ffffff;
+        --radius: 10px;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+
+        --status-pending-bg: #fef3c7;
+        --status-pending-text: #92400e;
+        --status-booted-bg: #dbeafe;
+        --status-booted-text: #1e40af;
+        --status-installing-bg: #dbeafe;
+        --status-installing-text: #1e40af;
+        --status-complete-bg: #dcfce7;
+        --status-complete-text: #166534;
+        --status-failed-bg: #fee2e2;
+        --status-failed-text: #991b1b;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14161a;
+          --surface: #1c1f26;
+          --border: #2b2f38;
+          --text: #eceef1;
+          --text-muted: #9aa1ad;
+          --accent: #4f8bff;
+          --accent-text: #0a0d12;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+          --status-pending-bg: #3a2c0d;
+          --status-pending-text: #f5c76a;
+          --status-booted-bg: #12294f;
+          --status-booted-text: #8ab4ff;
+          --status-installing-bg: #12294f;
+          --status-installing-text: #8ab4ff;
+          --status-complete-bg: #12331e;
+          --status-complete-text: #6fd196;
+          --status-failed-bg: #3a1414;
+          --status-failed-text: #f28b8b;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        padding: 2.5rem 1.25rem 4rem;
+        line-height: 1.5;
+      }
+
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+
+      header {
+        margin-bottom: 2rem;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+        font-weight: 650;
+        margin: 0 0 0.25rem;
+        letter-spacing: -0.01em;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.925rem;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .card h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 1rem;
+      }
+
+      #error:not(:empty) {
+        background: var(--status-failed-bg);
+        color: var(--status-failed-text);
+        border-radius: var(--radius);
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.9rem;
+      }
+
+      form {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: end;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+      }
+
+      .field label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+
+      input,
+      select,
+      button {
+        font: inherit;
+        font-size: 0.9rem;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        padding: 0.5rem 0.7rem;
+      }
+
+      input:focus,
+      select:focus,
+      button:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      input[name="mac"] {
+        font-variant-numeric: tabular-nums;
+        min-width: 13ch;
+      }
+
+      button {
+        background: var(--accent);
+        color: var(--accent-text);
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 0.55rem 1.1rem;
+      }
+
+      button:hover {
+        filter: brightness(1.06);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+
+      th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        padding: 0 0.6rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      td {
+        padding: 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      tbody tr:hover {
+        background: color-mix(in srgb, var(--accent) 4%, transparent);
+      }
+
+      td.mac,
+      td.mono {
+        font-variant-numeric: tabular-nums;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.82rem;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .badge-pending {
+        background: var(--status-pending-bg);
+        color: var(--status-pending-text);
+      }
+      .badge-booted,
+      .badge-installing {
+        background: var(--status-booted-bg);
+        color: var(--status-booted-text);
+      }
+      .badge-complete {
+        background: var(--status-complete-bg);
+        color: var(--status-complete-text);
+      }
+      .badge-failed {
+        background: var(--status-failed-bg);
+        color: var(--status-failed-text);
+      }
+
+      .empty {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        padding: 0.5rem 0;
+      }
     </style>
   </head>
   <body>
-    <h1>OS Deployment</h1>
-    <p id="error"></p>
+    <main>
+      <header>
+        <h1>OS Deployment</h1>
+        <p>Queue Windows reinstalls and track them through to completion.</p>
+      </header>
 
-    <section>
-      <h2>Start a deployment</h2>
-      <form id="deploy-form">
-        <input name="mac" placeholder="aa:bb:cc:dd:ee:ff" required pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" />
-        <input name="hostname" placeholder="hostname (optional)" />
-        <select name="os_profile" id="os-profile-select"></select>
-        <button type="submit">Queue reinstall</button>
-      </form>
-    </section>
+      <p id="error"></p>
 
-    <section>
-      <h2>Jobs</h2>
-      <table>
-        <thead>
-          <tr><th>ID</th><th>MAC</th><th>Profile</th><th>Status</th><th>Updated</th></tr>
-        </thead>
-        <tbody id="jobs-body"></tbody>
-      </table>
-    </section>
+      <section class="card">
+        <h2>Start a deployment</h2>
+        <form id="deploy-form">
+          <div class="field">
+            <label for="mac">MAC address</label>
+            <input id="mac" name="mac" placeholder="aa:bb:cc:dd:ee:ff" required
+                   pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" />
+          </div>
+          <div class="field">
+            <label for="hostname">Hostname (optional)</label>
+            <input id="hostname" name="hostname" placeholder="e.g. desk-042" />
+          </div>
+          <div class="field">
+            <label for="os-profile-select">OS profile</label>
+            <select name="os_profile" id="os-profile-select"></select>
+          </div>
+          <button type="submit">Queue reinstall</button>
+        </form>
+      </section>
 
-    <section>
-      <h2>Devices</h2>
-      <table>
-        <thead>
-          <tr><th>MAC</th><th>Hostname</th><th>Last seen</th></tr>
-        </thead>
-        <tbody id="devices-body"></tbody>
-      </table>
-    </section>
+      <section class="card">
+        <h2>Jobs</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>MAC</th><th>Profile</th><th>Status</th><th>Technician</th><th>Updated</th></tr>
+          </thead>
+          <tbody id="jobs-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Devices</h2>
+        <table>
+          <thead>
+            <tr><th>MAC</th><th>Hostname</th><th>Last seen</th></tr>
+          </thead>
+          <tbody id="devices-body"></tbody>
+        </table>
+      </section>
+    </main>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

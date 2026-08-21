@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows 11 25H2 Education unattend.xml. Shares boot media (kernel/initrd/WIM)
+  with the Pro profile - only this file's WIM image index and this file
+  itself differ. See boot/profiles/windows-11-25h2/README.md for the full
+  setup walkthrough, including how to find your WIM's real image indices
+  (they are NOT guaranteed to be 1/2 - check with
+  `dism /Get-WimInfo /WimFile:install.wim`).
+
+  This is a starting point, not a complete answer file - fill in whatever
+  else your environment needs (product key, partitioning) following
+  Microsoft's Unattend reference:
+  https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <UILanguage>en-US</UILanguage>
+    </component>
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ImageInstall>
+        <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+              <!-- ADJUST-ME: verify with `dism /Get-WimInfo /WimFile:install.wim` -->
+              <Key>/IMAGE/INDEX</Key>
+              <Value>2</Value>
+            </MetaData>
+          </InstallFrom>
+        </OSImage>
+      </ImageInstall>
+    </component>
+  </settings>
+
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>WIN-REIMAGED</ComputerName>
+    </component>
+  </settings>
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <ProtectYourPC>3</ProtectYourPC>
+      </OOBE>
+      <FirstLogonCommands>
+        <SynchronousCommand>
+          <Order>1</Order>
+          <CommandLine>powershell -NoProfile -Command "$mac=(Get-NetAdapter | Select-Object -First 1 -ExpandProperty MacAddress).ToLower().Replace('-',':'); Invoke-RestMethod -Method Patch -Uri (\"https://api.osd.xcet.uk/api/jobs/by-mac/$mac\") -ContentType 'application/json' -Body '{\"status\":\"complete\"}'"</CommandLine>
+          <Description>Phone home to os-deployment-worker</Description>
+        </SynchronousCommand>
+        <SynchronousCommand>
+          <Order>2</Order>
+          <CommandLine>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\Windows\Setup\Scripts | Out-Null; Invoke-WebRequest -Uri 'https://api.osd.xcet.uk/images/windows-11-25h2/domain-join.ps1' -OutFile 'C:\Windows\Setup\Scripts\domain-join.ps1'"</CommandLine>
+          <Description>Fetch the domain-join prompt script</Description>
+        </SynchronousCommand>
+        <SynchronousCommand>
+          <Order>3</Order>
+          <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\domain-join.ps1</CommandLine>
+          <Description>Prompt the technician for domain join</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>

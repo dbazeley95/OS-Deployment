@@ -29,31 +29,45 @@ Everything past that first PXE handshake is cloud-hosted.
 
 ## Flow
 
+Two entry points feed the same install path: an admin can pre-stage a job
+via the UI, or a technician can PXE-boot a machine cold and pick a profile
+from a menu. Either way, `/boot/:mac` requires HTTP Basic Auth against the
+`technicians` D1 table — iPXE prompts for credentials natively on a 401 and
+caches them per-host for the rest of the boot session.
+
 ```mermaid
 sequenceDiagram
-    participant Admin
-    participant Pages as Cloudflare Pages (UI)
-    participant Worker as Cloudflare Worker (API)
-    participant D1
+    participant Tech as Technician
     participant Target as Target machine (PXE)
     participant DHCP as On-prem proxyDHCP/TFTP
+    participant Worker as Cloudflare Worker (API)
+    participant D1
     participant R2
-
-    Admin->>Pages: Select device + OS profile, click "Reinstall"
-    Pages->>Worker: POST /api/jobs {mac, profile}
-    Worker->>D1: insert job (status=pending)
 
     Note over Target,DHCP: Tech reboots the machine, PXE boot enabled
     Target->>DHCP: DHCP discover (PXE options)
     DHCP-->>Target: hands out iPXE binary via TFTP
     Target->>Worker: iPXE chainloads https://.../boot/<mac>
-    Worker->>D1: look up pending job for mac
-    Worker-->>Target: dynamic iPXE script (kernel/initrd URLs + boot args)
-    Target->>R2: fetch kernel, initrd, answer file (via Worker)
-    Target->>Target: unattended install runs (autoinstall/preseed/unattend)
-    Target->>Worker: POST /api/jobs/:id {status=complete} (phone-home)
+    Worker-->>Target: 401 (no/invalid credentials)
+    Target->>Tech: iPXE prompts for username/password
+    Tech->>Target: enters credentials
+    Target->>Worker: retries with Basic Auth
+    Worker->>D1: verify technician; look up pending job for mac
+
+    alt no pre-staged job
+        Worker-->>Target: iPXE menu (profile choices)
+        Target->>Tech: technician picks a profile
+        Target->>Worker: chain /boot/<mac>/install?profile=... (cached auth)
+        Worker->>D1: create job (status=booted, technician=...)
+    else job already pre-staged via admin UI
+        Worker->>D1: mark booted, record confirming technician
+    end
+
+    Worker-->>Target: dynamic iPXE script (kernel/initrd/answerfile URLs)
+    Target->>R2: fetch kernel, initrd, answer file (via Worker, unauthenticated)
+    Target->>Target: unattended install runs; first logon prompts for domain join
+    Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=complete} (phone-home)
     Worker->>D1: update job status
-    Admin->>Pages: sees job complete
 ```
 
 ## Repo layout
@@ -67,13 +81,28 @@ boot/       iPXE snippets, proxyDHCP config, per-OS unattended-install profiles
 
 ## Security notes (read before pointing this at real hardware)
 
-- Put the admin UI and API behind Cloudflare Access (Zero Trust) — this
-  scaffold ships with no auth on `/api/*`.
-- `/boot/:mac` is intentionally unauthenticated (a netbooting machine has no
-  credentials yet) — treat MAC-based job lookup as the trust boundary, and
-  make jobs single-use / short-lived so a leaked boot URL can't be replayed.
-- Windows ISOs are not redistributable — this scaffold only stores an
-  `autounattend.xml` template; you supply your own licensed Windows media in
-  R2 (see `boot/profiles/windows-11/README.md` for trimming it to size).
+- `/boot/:mac` and `/boot/:mac/install` require HTTP Basic Auth against the
+  `technicians` D1 table (`worker/src/lib/auth.ts`), so any technician with
+  valid credentials can trigger a reinstall on **any** MAC that PXE-boots —
+  not just pre-registered ones. That's the point (self-service, no admin
+  bottleneck), but it means the real safety boundary is who holds valid
+  technician credentials and which machines can reach your PXE
+  infrastructure at all, not the admin UI's pre-staging step.
+- `/api/*` (the admin UI's REST API) still has no auth of its own — put it
+  and the admin UI behind Cloudflare Access (Zero Trust) if it needs to be
+  restricted.
+- `/images/*` (kernels, initrds, WIMs, answer files, the domain-join script)
+  is intentionally left unauthenticated even after the auth changes above —
+  answer files here carry no secrets (domain join is interactive, not baked
+  in), so gating downloads wasn't worth the complexity of threading a token
+  through static, pre-uploaded R2 objects.
+- Technician passwords are salted per-account and HMAC'd with a Worker
+  secret pepper (`PASSWORD_PEPPER`) — never stored or compared in plaintext.
+  There's no self-service account creation on purpose; provision technicians
+  with `scripts/add-technician.mjs`.
+- Windows ISOs are not redistributable — this scaffold only stores
+  `autounattend.xml` templates; you supply your own licensed Windows media
+  in R2 (see `boot/profiles/windows-11-25h2/README.md` for trimming it to
+  size).
 - Keep PXE/proxyDHCP on a segmented VLAN — a rogue proxyDHCP on a flat
   network can hijack any machine's boot process, including yours.

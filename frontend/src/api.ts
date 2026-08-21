@@ -15,6 +15,7 @@ export interface DeploymentJob {
   device_mac: string;
   os_profile: string;
   status: string;
+  technician: string | null;
   updated_at: string;
 }
 

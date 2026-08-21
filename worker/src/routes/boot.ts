@@ -1,39 +1,70 @@
 import { Hono } from "hono";
-import type { Bindings } from "../types";
-import { getPendingJobForMac, updateJobStatus } from "../lib/db";
-import { getProfile } from "../lib/profiles";
-import { buildBootScript, idleBootScript } from "../lib/ipxe";
+import type { Bindings, DeploymentJob } from "../types";
+import { createJob, getPendingJobForMac, updateJobStatus } from "../lib/db";
+import { getProfile, listProfiles } from "../lib/profiles";
+import { buildBootScript, buildMenuScript, idleBootScript } from "../lib/ipxe";
+import { requireTechnician } from "../lib/auth";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
+const IPXE_HEADERS = { "Content-Type": "text/plain" };
 
 export const bootRoute = new Hono<{ Bindings: Bindings }>();
 
-// iPXE chainloads this URL. Must stay unauthenticated: the machine has no
-// credentials yet. Treat the MAC as the trust boundary (see ARCHITECTURE.md).
+// iPXE chainloads this URL. Requires HTTP Basic Auth against the
+// technicians table - iPXE prompts for credentials natively on a 401 and
+// caches them per-host for the rest of the boot session (see auth.ts).
 bootRoute.get("/:mac", async (c) => {
   const mac = c.req.param("mac").toLowerCase();
   if (!MAC_RE.test(mac)) {
-    return c.text(idleBootScript("Malformed MAC address"), 200, {
-      "Content-Type": "text/plain",
-    });
+    return c.text(idleBootScript("Malformed MAC address"), 200, IPXE_HEADERS);
   }
+
+  const auth = await requireTechnician(c.env.DB, c.env.PASSWORD_PEPPER, c.req.header("Authorization") ?? null);
+  if (auth instanceof Response) return auth;
+  const technician = auth;
 
   const job = await getPendingJobForMac(c.env.DB, mac);
   if (!job) {
-    return c.text(idleBootScript("No pending deployment job"), 200, {
-      "Content-Type": "text/plain",
-    });
+    const origin = new URL(c.req.url).origin;
+    return c.text(buildMenuScript(listProfiles(), mac, origin), 200, IPXE_HEADERS);
   }
 
   const profile = getProfile(job.os_profile);
   if (!profile) {
-    return c.text(idleBootScript(`Unknown OS profile: ${job.os_profile}`), 200, {
-      "Content-Type": "text/plain",
-    });
+    return c.text(idleBootScript(`Unknown OS profile: ${job.os_profile}`), 200, IPXE_HEADERS);
   }
 
-  await updateJobStatus(c.env.DB, job.id, "booted");
+  await updateJobStatus(c.env.DB, job.id, "booted", `confirmed by ${technician}`, technician);
 
   const origin = new URL(c.req.url).origin;
-  return c.text(buildBootScript(profile, origin), 200, { "Content-Type": "text/plain" });
+  return c.text(buildBootScript(profile, origin), 200, IPXE_HEADERS);
+});
+
+// Reached from the boot menu once a technician picks a profile for a MAC
+// with no pre-staged job. Same auth as /:mac.
+bootRoute.get("/:mac/install", async (c) => {
+  const mac = c.req.param("mac").toLowerCase();
+  if (!MAC_RE.test(mac)) {
+    return c.text(idleBootScript("Malformed MAC address"), 200, IPXE_HEADERS);
+  }
+
+  const auth = await requireTechnician(c.env.DB, c.env.PASSWORD_PEPPER, c.req.header("Authorization") ?? null);
+  if (auth instanceof Response) return auth;
+  const technician = auth;
+
+  const profileId = c.req.query("profile") ?? "";
+  const profile = getProfile(profileId);
+  if (!profile) {
+    return c.text(idleBootScript(`Unknown OS profile: ${profileId}`), 200, IPXE_HEADERS);
+  }
+
+  let job = await getPendingJobForMac(c.env.DB, mac);
+  if (!job || job.os_profile !== profile.id) {
+    const id = await createJob(c.env.DB, mac, profile.id, { technician });
+    job = { id } as DeploymentJob; // only the id is used below
+  }
+  await updateJobStatus(c.env.DB, job.id, "booted", `selected by ${technician}`, technician);
+
+  const origin = new URL(c.req.url).origin;
+  return c.text(buildBootScript(profile, origin), 200, IPXE_HEADERS);
 });

@@ -23,3 +23,8 @@ bucket_name = "os-deployment-images"
 [vars]
 # Origin of the admin UI, for CORS on /api/*.
 ALLOWED_ORIGIN = "https://osd.xcet.uk"
+
+# PASSWORD_PEPPER is a secret, not a var - never put it here or commit it.
+# Set it with: wrangler secret put PASSWORD_PEPPER
+# (CI sets it automatically on every deploy from the WORKER_PASSWORD_PEPPER
+# GitHub secret - see .github/workflows/deploy-worker.yml)

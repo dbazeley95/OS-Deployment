@@ -17,32 +17,41 @@ async function loadProfiles() {
     .join("");
 }
 
+function emptyRow(colspan: number, message: string): string {
+  return `<tr><td colspan="${colspan}" class="empty">${message}</td></tr>`;
+}
+
 async function loadJobs() {
   const jobs = await api.listJobs();
-  jobsBody.innerHTML = jobs
-    .map(
-      (j) => `<tr>
-        <td>${j.id}</td>
-        <td>${j.device_mac}</td>
-        <td>${j.os_profile}</td>
-        <td class="status-${j.status}">${j.status}</td>
-        <td>${j.updated_at}</td>
-      </tr>`
-    )
-    .join("");
+  jobsBody.innerHTML = jobs.length
+    ? jobs
+        .map(
+          (j) => `<tr>
+            <td>${j.id}</td>
+            <td class="mac">${j.device_mac}</td>
+            <td>${j.os_profile}</td>
+            <td><span class="badge badge-${j.status}">${j.status}</span></td>
+            <td>${j.technician ?? "—"}</td>
+            <td>${j.updated_at}</td>
+          </tr>`
+        )
+        .join("")
+    : emptyRow(6, "No jobs yet.");
 }
 
 async function loadDevices() {
   const devices = await api.listDevices();
-  devicesBody.innerHTML = devices
-    .map(
-      (d) => `<tr>
-        <td>${d.mac}</td>
-        <td>${d.hostname ?? ""}</td>
-        <td>${d.last_seen_at ?? ""}</td>
-      </tr>`
-    )
-    .join("");
+  devicesBody.innerHTML = devices.length
+    ? devices
+        .map(
+          (d) => `<tr>
+            <td class="mac">${d.mac}</td>
+            <td>${d.hostname ?? "—"}</td>
+            <td>${d.last_seen_at ?? "—"}</td>
+          </tr>`
+        )
+        .join("")
+    : emptyRow(3, "No devices yet.");
 }
 
 async function refresh() {

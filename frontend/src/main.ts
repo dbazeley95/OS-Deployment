@@ -8,6 +8,7 @@ import {
   type TaskSequence,
   type TaskSequenceStep,
 } from "./api";
+import { findWindowsWimInIso } from "./iso";
 
 const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
 const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -41,6 +42,8 @@ const profileCancelBtn = document.querySelector<HTMLButtonElement>("#profile-can
 const profileInstallWimInput = document.querySelector<HTMLInputElement>("#profile-install-wim")!;
 const profileWimFileInput = document.querySelector<HTMLInputElement>("#profile-wim-file")!;
 const profileWimUploadBtn = document.querySelector<HTMLButtonElement>("#profile-wim-upload-btn")!;
+const profileIsoFileInput = document.querySelector<HTMLInputElement>("#profile-iso-file")!;
+const profileIsoUploadBtn = document.querySelector<HTMLButtonElement>("#profile-iso-upload-btn")!;
 const profileWimProgress = document.querySelector<HTMLElement>("#profile-wim-progress")!;
 const profileWimProgressBar = document.querySelector<HTMLProgressElement>("#profile-wim-progress-bar")!;
 const profileWimProgressText = document.querySelector<HTMLElement>("#profile-wim-progress-text")!;
@@ -305,6 +308,7 @@ function resetProfileForm() {
   profileSubmitBtn.textContent = "Add profile";
   profileCancelBtn.hidden = true;
   profileWimUploadBtn.disabled = true;
+  profileIsoUploadBtn.disabled = true;
   profileWimProgress.hidden = true;
   profileWimProgressBar.value = 0;
 }
@@ -393,33 +397,37 @@ profileWimFileInput.addEventListener("change", () => {
   profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
 });
 
+profileIsoFileInput.addEventListener("change", () => {
+  profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
+});
+
 const WIM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 
-profileWimUploadBtn.addEventListener("click", async () => {
-  const file = profileWimFileInput.files?.[0];
-  if (!file) return;
-  const profileId = profileIdInput.value.trim();
-  if (!profileId) {
-    showError(new Error("Enter a profile ID above before uploading a WIM."));
-    return;
-  }
-  const key = `${profileId}/sources/${file.name}`;
+interface UploadSource {
+  size: number;
+  slice(start: number, end: number): Blob;
+}
 
+// Shared by both "upload a WIM directly" and "extract from an ISO" - the
+// only difference is where the byte source's data actually lives (a plain
+// File vs. a lazy slice() over install.wim's extents inside a local ISO).
+async function uploadWimSource(key: string, source: UploadSource, inputsToDisable: HTMLInputElement[]) {
   errorEl.textContent = "";
   profileWimUploadBtn.disabled = true;
-  profileWimFileInput.disabled = true;
+  profileIsoUploadBtn.disabled = true;
+  for (const input of inputsToDisable) input.disabled = true;
   profileWimProgress.hidden = false;
   profileWimProgressBar.value = 0;
   profileWimProgressText.textContent = "Starting upload...";
 
-  const totalChunks = Math.ceil(file.size / WIM_UPLOAD_CHUNK_BYTES);
+  const totalChunks = Math.ceil(source.size / WIM_UPLOAD_CHUNK_BYTES);
   let uploadId: string | undefined;
   try {
     const created = await api.createUpload(key);
     uploadId = created.uploadId;
     const parts: { partNumber: number; etag: string }[] = [];
     for (let i = 0; i < totalChunks; i++) {
-      const chunk = file.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
+      const chunk = source.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
       const part = await api.uploadPart(uploadId, key, i + 1, chunk);
       parts.push(part);
       const percent = Math.round(((i + 1) / totalChunks) * 100);
@@ -434,8 +442,48 @@ profileWimUploadBtn.addEventListener("click", async () => {
     profileWimProgress.hidden = true;
     showError(err);
   } finally {
-    profileWimFileInput.disabled = false;
+    for (const input of inputsToDisable) input.disabled = false;
     profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
+    profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
+  }
+}
+
+profileWimUploadBtn.addEventListener("click", async () => {
+  const file = profileWimFileInput.files?.[0];
+  if (!file) return;
+  const profileId = profileIdInput.value.trim();
+  if (!profileId) {
+    showError(new Error("Enter a profile ID above before uploading a WIM."));
+    return;
+  }
+  const key = `${profileId}/sources/${file.name}`;
+  await uploadWimSource(key, file, [profileWimFileInput]);
+});
+
+profileIsoUploadBtn.addEventListener("click", async () => {
+  const file = profileIsoFileInput.files?.[0];
+  if (!file) return;
+  const profileId = profileIdInput.value.trim();
+  if (!profileId) {
+    showError(new Error("Enter a profile ID above before extracting from an ISO."));
+    return;
+  }
+
+  errorEl.textContent = "";
+  profileIsoUploadBtn.disabled = true;
+  profileIsoFileInput.disabled = true;
+  profileWimProgress.hidden = false;
+  profileWimProgressBar.value = 0;
+  profileWimProgressText.textContent = "Reading ISO filesystem...";
+  try {
+    const wim = await findWindowsWimInIso(file);
+    const key = `${profileId}/sources/${wim.name}`;
+    await uploadWimSource(key, wim, [profileIsoFileInput]);
+  } catch (err) {
+    profileWimProgress.hidden = true;
+    showError(err);
+    profileIsoFileInput.disabled = false;
+    profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
   }
 });
 

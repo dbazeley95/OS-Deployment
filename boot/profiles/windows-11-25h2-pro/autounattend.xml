@@ -40,6 +40,11 @@
   <settings pass="specialize">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <!-- WIN-REIMAGED is a placeholder DeployGui.ps1 replaces with the
+           technician-entered hostname before writing this file to disk
+           (see ../../winpe/README.md) - it's also the value Windows gets
+           if this file is used unmodified via the older iPXE path, which
+           has no substitution mechanism, so keep it a valid computer name. -->
       <ComputerName>WIN-REIMAGED</ComputerName>
     </component>
   </settings>
@@ -55,13 +60,13 @@
         </SynchronousCommand>
         <SynchronousCommand>
           <Order>2</Order>
-          <CommandLine>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\Windows\Setup\Scripts | Out-Null; Invoke-WebRequest -Uri 'https://api.osd.xcet.uk/images/winpe/PostAction.ps1' -OutFile 'C:\Windows\Setup\Scripts\PostAction.ps1'; if (-not (Test-Path 'C:\Windows\Setup\Scripts\post-action.json')) { '{\"action\":\"domain-join\"}' | Set-Content 'C:\Windows\Setup\Scripts\post-action.json' }"</CommandLine>
-          <Description>Fetch the post-action script; default to domain-join if the WinPE deploy flow didn't already choose one</Description>
+          <CommandLine>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\Windows\Setup\Scripts | Out-Null; Invoke-WebRequest -Uri 'https://api.osd.xcet.uk/images/winpe/PostAction.ps1' -OutFile 'C:\Windows\Setup\Scripts\PostAction.ps1'; if (-not (Test-Path 'C:\Windows\Setup\Scripts\post-action.json')) { '{\"domainJoin\":false,\"steps\":[]}' | Set-Content 'C:\Windows\Setup\Scripts\post-action.json' }"</CommandLine>
+          <Description>Fetch the post-action script; the older iPXE path has no wizard to collect a domain/task sequence, so it defaults to no domain-join and no steps</Description>
         </SynchronousCommand>
         <SynchronousCommand>
           <Order>3</Order>
           <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\PostAction.ps1</CommandLine>
-          <Description>Run the post-imaging action (domain join / app install / autopilot)</Description>
+          <Description>Run the post-imaging action (domain join, then task sequence steps)</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

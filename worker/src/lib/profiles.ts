@@ -1,59 +1,91 @@
+import type { Bindings } from "../types";
+
 /**
- * Static catalog of OS profiles this deployment system knows how to install.
- * Paths are keys inside the R2 "IMAGES" bucket; upload them with scripts/upload-image.sh.
- * Kept in code (not D1) since profiles change rarely and ship with the repo.
+ * Catalog of OS profiles this deployment system knows how to install,
+ * backed by the `os_profiles` D1 table (see migrations/0004_catalog.sql)
+ * and managed via the admin UI's catalog editor
+ * (worker/src/routes/catalog.ts) rather than a code change + redeploy.
  */
 export interface OsProfile {
   id: string;
   label: string;
-  /** iPXE boot path only - unused by the WinPE/DISM deploy flow. */
-  kernel: string;
-  /** iPXE boot path only - unused by the WinPE/DISM deploy flow. */
-  initrd: string;
-  /** Extra iPXE kernel args appended after the answer-file arg. */
-  extraArgs?: string;
-  /** R2 key for the unattended-install answer file (unattend.xml). */
-  answerFile: string;
-  /** How the installer expects the answer file to be passed. */
-  answerFileArg: (answerFileUrl: string) => string;
   /** R2 key for this profile's WIM, applied via `DISM /Apply-Image` in the WinPE deploy flow. */
   installWim: string;
   /** WIM image index within installWim for this edition. */
   imageIndex: number;
+  /** R2 key for the unattended-install answer file (unattend.xml). */
+  answerFile: string;
+  /** iPXE boot path only - null if this profile isn't set up for iPXE. */
+  kernel: string | null;
+  /** iPXE boot path only - null if this profile isn't set up for iPXE. */
+  initrd: string | null;
 }
 
-// Pro and Education share one boot media (kernel/initrd/WIM) - only the
-// answer file differs, selecting a different WIM image index. See
-// boot/profiles/windows-11-25h2/README.md.
-export const OS_PROFILES: Record<string, OsProfile> = {
-  "windows-11-25h2-pro": {
-    id: "windows-11-25h2-pro",
-    label: "Windows 11 25H2 Pro",
-    kernel: "windows-11-25h2/boot/bootx64.efi",
-    initrd: "windows-11-25h2/boot/boot.sdi",
-    answerFile: "windows-11-25h2-pro/autounattend.xml",
-    answerFileArg: (url) => `answerfile=${url}`,
-    // ADJUST-ME: verify with `dism /Get-WimInfo /WimFile:install.wim`
-    installWim: "windows-11-25h2/sources/install.wim",
-    imageIndex: 1,
-  },
-  "windows-11-25h2-edu": {
-    id: "windows-11-25h2-edu",
-    label: "Windows 11 25H2 Education",
-    kernel: "windows-11-25h2/boot/bootx64.efi",
-    initrd: "windows-11-25h2/boot/boot.sdi",
-    answerFile: "windows-11-25h2-edu/autounattend.xml",
-    answerFileArg: (url) => `answerfile=${url}`,
-    // ADJUST-ME: verify with `dism /Get-WimInfo /WimFile:install.wim`
-    installWim: "windows-11-25h2/sources/install.wim",
-    imageIndex: 2,
-  },
-};
-
-export function listProfiles(): OsProfile[] {
-  return Object.values(OS_PROFILES);
+interface OsProfileRow {
+  id: string;
+  label: string;
+  install_wim_key: string;
+  image_index: number;
+  answer_file_key: string;
+  kernel_key: string | null;
+  initrd_key: string | null;
 }
 
-export function getProfile(id: string): OsProfile | undefined {
-  return OS_PROFILES[id];
+function rowToProfile(row: OsProfileRow): OsProfile {
+  return {
+    id: row.id,
+    label: row.label,
+    installWim: row.install_wim_key,
+    imageIndex: row.image_index,
+    answerFile: row.answer_file_key,
+    kernel: row.kernel_key,
+    initrd: row.initrd_key,
+  };
+}
+
+export interface OsProfileInput {
+  id: string;
+  label: string;
+  installWim: string;
+  imageIndex: number;
+  answerFile: string;
+  kernel?: string | null;
+  initrd?: string | null;
+}
+
+export async function listProfiles(db: Bindings["DB"]): Promise<OsProfile[]> {
+  const { results } = await db.prepare(`SELECT * FROM os_profiles ORDER BY label`).all<OsProfileRow>();
+  return (results ?? []).map(rowToProfile);
+}
+
+export async function getProfile(db: Bindings["DB"], id: string): Promise<OsProfile | null> {
+  const row = await db.prepare(`SELECT * FROM os_profiles WHERE id = ?1`).bind(id).first<OsProfileRow>();
+  return row ? rowToProfile(row) : null;
+}
+
+export async function createProfile(db: Bindings["DB"], input: OsProfileInput): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO os_profiles (id, label, install_wim_key, image_index, answer_file_key, kernel_key, initrd_key)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+    )
+    .bind(input.id, input.label, input.installWim, input.imageIndex, input.answerFile, input.kernel ?? null, input.initrd ?? null)
+    .run();
+}
+
+export async function updateProfile(db: Bindings["DB"], id: string, input: OsProfileInput): Promise<boolean> {
+  const { meta } = await db
+    .prepare(
+      `UPDATE os_profiles SET label = ?2, install_wim_key = ?3, image_index = ?4, answer_file_key = ?5,
+         kernel_key = ?6, initrd_key = ?7, updated_at = datetime('now')
+       WHERE id = ?1`
+    )
+    .bind(id, input.label, input.installWim, input.imageIndex, input.answerFile, input.kernel ?? null, input.initrd ?? null)
+    .run();
+  return meta.changes > 0;
+}
+
+export async function deleteProfile(db: Bindings["DB"], id: string): Promise<boolean> {
+  const { meta } = await db.prepare(`DELETE FROM os_profiles WHERE id = ?1`).bind(id).run();
+  return meta.changes > 0;
 }

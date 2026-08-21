@@ -1,32 +1,19 @@
 import { Hono } from "hono";
 import type { Bindings, JobStatus } from "../types";
-import { createJob, listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
-import { getProfile, listProfiles } from "../lib/profiles";
+import { listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const VALID_STATUSES: JobStatus[] = ["pending", "booted", "installing", "complete", "failed"];
 
+// A log of in-progress/complete deployments - there's no admin-side job
+// creation here on purpose. Every deployment starts on-device, via the
+// WinPE wizard (DeployGui.ps1) authenticating against /api/deploy/*; this
+// route only ever reads or corrects records that flow already created.
 export const jobsRoute = new Hono<{ Bindings: Bindings }>();
 
 jobsRoute.get("/", async (c) => {
   const jobs = await listJobs(c.env.DB);
   return c.json(jobs);
-});
-
-jobsRoute.get("/profiles", (c) => {
-  return c.json(listProfiles());
-});
-
-jobsRoute.post("/", async (c) => {
-  const body = await c.req.json<{ mac?: string; os_profile?: string; hostname?: string }>().catch(() => null);
-  if (!body?.mac || !MAC_RE.test(body.mac)) {
-    return c.json({ error: "mac is required and must look like aa:bb:cc:dd:ee:ff" }, 400);
-  }
-  if (!body.os_profile || !getProfile(body.os_profile)) {
-    return c.json({ error: `os_profile must be one of: ${listProfiles().map((p) => p.id).join(", ")}` }, 400);
-  }
-  const id = await createJob(c.env.DB, body.mac.toLowerCase(), body.os_profile, { hostname: body.hostname });
-  return c.json({ id }, 201);
 });
 
 // Phone-home endpoint for post-install scripts, which know their MAC but not
@@ -48,7 +35,8 @@ jobsRoute.patch("/by-mac/:mac", async (c) => {
   return c.json({ ok: true });
 });
 
-// Called by an admin to mark a job's status directly by its numeric id.
+// Manual correction of an existing job's status/log by its numeric id -
+// not a way to create or schedule a new deployment.
 jobsRoute.patch("/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) {

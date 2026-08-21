@@ -9,21 +9,20 @@ export function buildBootScript(profile: OsProfile, origin: string): string {
   const kernelUrl = `${origin}/images/${profile.kernel}`;
   const initrdUrl = `${origin}/images/${profile.initrd}`;
   const answerFileUrl = `${origin}/images/${profile.answerFile}`;
-  const answerArg = profile.answerFileArg(answerFileUrl);
 
   return `#!ipxe
 echo Deploying profile: ${profile.label}
-kernel ${kernelUrl} ${answerArg} ${profile.extraArgs ?? ""}
+kernel ${kernelUrl} answerfile=${answerFileUrl}
 initrd ${initrdUrl}
 boot
 `;
 }
 
 /**
- * Interactive boot menu for a MAC with no admin-pre-staged job: the
- * technician (already Basic-Auth'd to get here) picks a profile, which
- * chains to /boot/:mac/install?profile=<id> - the same Worker host, so
- * iPXE's cached HTTP credentials carry over without a second prompt.
+ * Interactive boot menu for a MAC with no existing job: the technician
+ * (already Basic-Auth'd to get here) picks a profile, which chains to
+ * /boot/:mac/install?profile=<id> - the same Worker host, so iPXE's
+ * cached HTTP credentials carry over without a second prompt.
  */
 export function buildMenuScript(profiles: OsProfile[], mac: string, origin: string): string {
   const items = profiles.map((p) => `item ${p.id} ${p.label}`).join("\n");

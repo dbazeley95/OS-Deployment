@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Bindings } from "../types";
 import { getPendingJobForMac, resolveOrCreateJob, updateJobStatus } from "../lib/db";
-import { getProfile, listProfiles } from "../lib/profiles";
+import { getProfile, listProfiles, OsProfile } from "../lib/profiles";
 import { buildBootScript, buildMenuScript, idleBootScript } from "../lib/ipxe";
 import { requireTechnician } from "../lib/auth";
 
@@ -9,6 +9,10 @@ const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const IPXE_HEADERS = { "Content-Type": "text/plain" };
 
 export const bootRoute = new Hono<{ Bindings: Bindings }>();
+
+function hasIpxeSupport(profile: OsProfile): boolean {
+  return Boolean(profile.kernel && profile.initrd);
+}
 
 // iPXE chainloads this URL. Requires HTTP Basic Auth against the
 // technicians table - iPXE prompts for credentials natively on a 401 and
@@ -26,12 +30,13 @@ bootRoute.get("/:mac", async (c) => {
   const job = await getPendingJobForMac(c.env.DB, mac);
   if (!job) {
     const origin = new URL(c.req.url).origin;
-    return c.text(buildMenuScript(listProfiles(), mac, origin), 200, IPXE_HEADERS);
+    const profiles = (await listProfiles(c.env.DB)).filter(hasIpxeSupport);
+    return c.text(buildMenuScript(profiles, mac, origin), 200, IPXE_HEADERS);
   }
 
-  const profile = getProfile(job.os_profile);
-  if (!profile) {
-    return c.text(idleBootScript(`Unknown OS profile: ${job.os_profile}`), 200, IPXE_HEADERS);
+  const profile = await getProfile(c.env.DB, job.os_profile);
+  if (!profile || !hasIpxeSupport(profile)) {
+    return c.text(idleBootScript(`Unknown or non-iPXE OS profile: ${job.os_profile}`), 200, IPXE_HEADERS);
   }
 
   await updateJobStatus(c.env.DB, job.id, "booted", `confirmed by ${technician}`, technician);
@@ -41,7 +46,7 @@ bootRoute.get("/:mac", async (c) => {
 });
 
 // Reached from the boot menu once a technician picks a profile for a MAC
-// with no pre-staged job. Same auth as /:mac.
+// with no existing job. Same auth as /:mac.
 bootRoute.get("/:mac/install", async (c) => {
   const mac = c.req.param("mac").toLowerCase();
   if (!MAC_RE.test(mac)) {
@@ -53,9 +58,9 @@ bootRoute.get("/:mac/install", async (c) => {
   const technician = auth;
 
   const profileId = c.req.query("profile") ?? "";
-  const profile = getProfile(profileId);
-  if (!profile) {
-    return c.text(idleBootScript(`Unknown OS profile: ${profileId}`), 200, IPXE_HEADERS);
+  const profile = await getProfile(c.env.DB, profileId);
+  if (!profile || !hasIpxeSupport(profile)) {
+    return c.text(idleBootScript(`Unknown or non-iPXE OS profile: ${profileId}`), 200, IPXE_HEADERS);
   }
 
   await resolveOrCreateJob(c.env.DB, mac, profile.id, { technician, log: `selected by ${technician}` });

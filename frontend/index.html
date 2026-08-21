@@ -236,42 +236,108 @@
         font-size: 0.875rem;
         padding: 0.5rem 0;
       }
+
+      .version-badge {
+        display: inline-block;
+        vertical-align: middle;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+        margin-left: 0.6rem;
+      }
+
+      .steps-list {
+        margin: 0.75rem 0 1.25rem;
+        padding-left: 1.5rem;
+        font-size: 0.875rem;
+      }
+
+      .steps-list li {
+        margin-bottom: 0.35rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .steps-list button {
+        padding: 0.1rem 0.45rem;
+        font-size: 0.72rem;
+      }
+
+      .hint {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin: -0.5rem 0 1rem;
+      }
+
+      .row-actions {
+        display: flex;
+        gap: 0.4rem;
+        white-space: nowrap;
+      }
+
+      .row-actions button {
+        padding: 0.25rem 0.55rem;
+        font-size: 0.78rem;
+      }
+
+      .row-actions .danger {
+        background: var(--status-failed-bg);
+        color: var(--status-failed-text);
+        border: none;
+      }
+
+      #login-card {
+        max-width: 360px;
+      }
+
+      header {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 1rem;
+      }
     </style>
   </head>
   <body>
     <main>
       <header>
-        <h1>OS Deployment</h1>
-        <p>Queue Windows reinstalls and track them through to completion.</p>
+        <div>
+          <h1>OS Deployment <span id="version-badge" class="version-badge" title="Build version"></span></h1>
+          <p>Deployment catalog editor and job log - reinstalls are always started on-device.</p>
+        </div>
+        <button id="logout-btn" type="button" hidden>Log out</button>
       </header>
 
       <p id="error"></p>
 
-      <section class="card">
-        <h2>Start a deployment</h2>
-        <form id="deploy-form">
+      <section class="card" id="login-card">
+        <h2>Log in</h2>
+        <form id="login-form">
           <div class="field">
-            <label for="mac">MAC address</label>
-            <input id="mac" name="mac" placeholder="aa:bb:cc:dd:ee:ff" required
-                   pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" />
+            <label for="login-username">Username</label>
+            <input id="login-username" name="username" required />
           </div>
           <div class="field">
-            <label for="hostname">Hostname (optional)</label>
-            <input id="hostname" name="hostname" placeholder="e.g. desk-042" />
+            <label for="login-password">Password</label>
+            <input id="login-password" name="password" type="password" required />
           </div>
-          <div class="field">
-            <label for="os-profile-select">OS profile</label>
-            <select name="os_profile" id="os-profile-select"></select>
-          </div>
-          <button type="submit">Queue reinstall</button>
+          <button type="submit">Log in</button>
         </form>
       </section>
 
+      <div id="app" hidden>
       <section class="card">
         <h2>Jobs</h2>
+        <p class="hint">Deployments are always started on-device (the WinPE wizard) - this is a log, not a scheduler.</p>
         <table>
           <thead>
-            <tr><th>ID</th><th>MAC</th><th>Profile</th><th>Status</th><th>Post-action</th><th>Technician</th><th>Updated</th></tr>
+            <tr><th>ID</th><th>MAC</th><th>Task sequence</th><th>Status</th><th>Domain join</th><th>Technician</th><th>Updated</th></tr>
           </thead>
           <tbody id="jobs-body"></tbody>
         </table>
@@ -286,6 +352,118 @@
           <tbody id="devices-body"></tbody>
         </table>
       </section>
+
+      <section class="card">
+        <h2>OS profiles</h2>
+        <p class="hint">The catalog the WinPE deployment GUI offers. Edit here - no code change or redeploy needed.</p>
+        <form id="profile-form">
+          <div class="field">
+            <label for="profile-id">ID</label>
+            <input id="profile-id" name="id" placeholder="windows-11-25h2-pro" required />
+          </div>
+          <div class="field">
+            <label for="profile-label">Label</label>
+            <input id="profile-label" name="label" placeholder="Windows 11 25H2 Pro" required />
+          </div>
+          <div class="field">
+            <label for="profile-install-wim">Install WIM (R2 key)</label>
+            <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
+          </div>
+          <div class="field">
+            <label for="profile-image-index">Image index</label>
+            <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
+          </div>
+          <div class="field">
+            <label for="profile-answer-file">Answer file (R2 key)</label>
+            <input id="profile-answer-file" name="answerFile" placeholder="windows-11-25h2-pro/autounattend.xml" required />
+          </div>
+          <div class="field">
+            <label for="profile-kernel">iPXE kernel (optional)</label>
+            <input id="profile-kernel" name="kernel" placeholder="windows-11-25h2/boot/bootx64.efi" />
+          </div>
+          <div class="field">
+            <label for="profile-initrd">iPXE initrd (optional)</label>
+            <input id="profile-initrd" name="initrd" placeholder="windows-11-25h2/boot/boot.sdi" />
+          </div>
+          <button type="submit" id="profile-submit">Add profile</button>
+          <button type="button" id="profile-cancel" hidden>Cancel</button>
+        </form>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Label</th><th>Install WIM</th><th>Index</th><th>Answer file</th><th></th></tr>
+          </thead>
+          <tbody id="profiles-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Apps</h2>
+        <p class="hint">Installers/scripts usable as task sequence steps.</p>
+        <form id="app-form">
+          <div class="field">
+            <label for="app-id">ID</label>
+            <input id="app-id" name="id" placeholder="company-vpn" required />
+          </div>
+          <div class="field">
+            <label for="app-label">Label</label>
+            <input id="app-label" name="label" placeholder="Company VPN Client" required />
+          </div>
+          <div class="field">
+            <label for="app-r2key">R2 key</label>
+            <input id="app-r2key" name="r2Key" placeholder="apps/company-vpn.msi" required />
+          </div>
+          <div class="field">
+            <label for="app-install-kind">Install kind</label>
+            <select id="app-install-kind" name="installKind">
+              <option value="msi">msi</option>
+              <option value="exe">exe</option>
+              <option value="script">script</option>
+            </select>
+          </div>
+          <button type="submit" id="app-submit">Add app</button>
+          <button type="button" id="app-cancel" hidden>Cancel</button>
+        </form>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Label</th><th>R2 key</th><th>Kind</th><th></th></tr>
+          </thead>
+          <tbody id="apps-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Task sequences</h2>
+        <p class="hint">Bundles an OS profile with an ordered list of apps to install - what the WinPE wizard offers.</p>
+        <form id="task-sequence-form">
+          <div class="field">
+            <label for="ts-id">ID</label>
+            <input id="ts-id" name="id" placeholder="win11-pro-sales" required />
+          </div>
+          <div class="field">
+            <label for="ts-label">Label</label>
+            <input id="ts-label" name="label" placeholder="Windows 11 Pro - Sales laptop" required />
+          </div>
+          <div class="field">
+            <label for="ts-profile-select">OS profile</label>
+            <select id="ts-profile-select" name="osProfileId"></select>
+          </div>
+          <div class="field">
+            <label for="ts-step-select">Step to add</label>
+            <select id="ts-step-select"></select>
+          </div>
+          <button type="button" id="ts-add-step">Add step</button>
+          <button type="submit" id="ts-submit">Add task sequence</button>
+          <button type="button" id="ts-cancel" hidden>Cancel</button>
+        </form>
+        <ol id="ts-steps-list" class="steps-list"></ol>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Label</th><th>OS profile</th><th>Steps</th><th></th></tr>
+          </thead>
+          <tbody id="task-sequences-body"></tbody>
+        </table>
+      </section>
+      </div>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

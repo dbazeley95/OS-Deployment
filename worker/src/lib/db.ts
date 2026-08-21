@@ -1,4 +1,4 @@
-import type { Bindings, DeploymentJob, Device, JobStatus, PostAction } from "../types";
+import type { Bindings, DeploymentJob, Device, JobStatus } from "../types";
 
 export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string) {
   await db
@@ -18,19 +18,31 @@ export async function listDevices(db: Bindings["DB"]): Promise<Device[]> {
   return results ?? [];
 }
 
+export async function getDevice(db: Bindings["DB"], mac: string): Promise<Device | null> {
+  const device = await db.prepare(`SELECT * FROM devices WHERE mac = ?1`).bind(mac).first<Device>();
+  return device ?? null;
+}
+
 export async function createJob(
   db: Bindings["DB"],
   mac: string,
   osProfile: string,
-  opts?: { hostname?: string; technician?: string; postAction?: PostAction; appId?: string }
+  opts?: { hostname?: string; technician?: string; taskSequenceId?: string; domainJoin?: boolean; domain?: string }
 ): Promise<number> {
   await upsertDevice(db, mac, opts?.hostname);
   const { meta } = await db
     .prepare(
-      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, post_action, app_id)
-       VALUES (?1, ?2, ?3, ?4, ?5)`
+      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, task_sequence_id, domain_join, domain)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
     )
-    .bind(mac, osProfile, opts?.technician ?? null, opts?.postAction ?? null, opts?.appId ?? null)
+    .bind(
+      mac,
+      osProfile,
+      opts?.technician ?? null,
+      opts?.taskSequenceId ?? null,
+      opts?.domainJoin ? 1 : 0,
+      opts?.domain ?? null
+    )
     .run();
   return meta.last_row_id as number;
 }
@@ -74,23 +86,41 @@ export async function updateLatestJobStatusForMac(
 
 /**
  * Reuses a pending/booted job for this MAC+profile if one already exists
- * (e.g. pre-staged via the admin UI), otherwise creates one - then marks it
- * booted either way. Shared by /boot/:mac/install (worker/src/routes/boot.ts)
- * and the JSON deploy API (worker/src/routes/deploy.ts) so both entry
- * points behave identically.
+ * (e.g. a retry after this same machine got partway through a previous
+ * boot), otherwise creates one - then marks it booted either way. Shared
+ * by /boot/:mac/install (worker/src/routes/boot.ts) and the JSON deploy
+ * API (worker/src/routes/deploy.ts) so both entry points behave
+ * identically. There's no admin-side job creation - every job originates
+ * on-device.
  */
 export async function resolveOrCreateJob(
   db: Bindings["DB"],
   mac: string,
   profileId: string,
-  opts: { technician: string; log: string; postAction?: PostAction; appId?: string }
+  opts: {
+    technician: string;
+    log: string;
+    taskSequenceId?: string;
+    domainJoin?: boolean;
+    domain?: string;
+    hostname?: string;
+  }
 ): Promise<number> {
+  // hostname may be entered fresh even if a job for this mac already exists
+  // (upsertDevice is idempotent), so record it unconditionally.
+  if (opts.hostname) await upsertDevice(db, mac, opts.hostname);
+
   const existing = await getPendingJobForMac(db, mac);
   const id =
     existing && existing.os_profile === profileId
       ? existing.id
-      : await createJob(db, mac, profileId, { technician: opts.technician, postAction: opts.postAction, appId: opts.appId });
-  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.postAction, opts.appId);
+      : await createJob(db, mac, profileId, {
+          technician: opts.technician,
+          taskSequenceId: opts.taskSequenceId,
+          domainJoin: opts.domainJoin,
+          domain: opts.domain,
+        });
+  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.taskSequenceId, opts.domainJoin, opts.domain);
   return id;
 }
 
@@ -100,18 +130,28 @@ export async function updateJobStatus(
   status: JobStatus,
   log?: string,
   technician?: string,
-  postAction?: PostAction,
-  appId?: string
+  taskSequenceId?: string,
+  domainJoin?: boolean,
+  domain?: string
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log),
          technician = COALESCE(?4, technician),
-         post_action = COALESCE(?5, post_action),
-         app_id = COALESCE(?6, app_id),
+         task_sequence_id = COALESCE(?5, task_sequence_id),
+         domain_join = COALESCE(?6, domain_join),
+         domain = COALESCE(?7, domain),
          updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, status, log ?? null, technician ?? null, postAction ?? null, appId ?? null)
+    .bind(
+      id,
+      status,
+      log ?? null,
+      technician ?? null,
+      taskSequenceId ?? null,
+      domainJoin === undefined ? null : domainJoin ? 1 : 0,
+      domain ?? null
+    )
     .run();
 }

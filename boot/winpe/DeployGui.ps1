@@ -26,6 +26,10 @@ function Get-MacAddress {
     (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1 -ExpandProperty MacAddress).ToLower().Replace("-", ":")
 }
 
+function Get-SerialNumber {
+    (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
+}
+
 function Invoke-DeployApi {
     param([string]$Path, [hashtable]$Body)
     Invoke-RestMethod -Method Post -Uri "$WorkerBase$Path" -ContentType "application/json" -Body ($Body | ConvertTo-Json)
@@ -374,6 +378,7 @@ assign letter=W
 # --- Main flow -------------------------------------------------------------
 
 $mac = Get-MacAddress
+$serialNumber = Get-SerialNumber
 
 while ($true) {
     $creds = Show-LoginForm -Mac $mac
@@ -401,7 +406,7 @@ while ($true) {
     try {
         $deployment = Invoke-DeployApi -Path "/api/deploy/select" -Body @{
             mac = $mac; username = $creds.Username; password = $creds.Password
-            hostname = $selection.Hostname; taskSequenceId = $selection.TaskSequenceId
+            hostname = $selection.Hostname; serialNumber = $serialNumber; taskSequenceId = $selection.TaskSequenceId
             domainJoin = $selection.DomainJoin; domain = $selection.Domain
         }
     } catch {

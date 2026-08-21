@@ -1,6 +1,8 @@
 // Set via `VITE_API_BASE` at build time (Cloudflare Pages env var), or defaults
 // to same-origin `/api` if the Worker is proxied behind the Pages project.
-const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+// Trailing slash stripped so `${API_BASE}${path}` can't produce a double
+// slash regardless of whether the env var was set with one.
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
 export interface Device {
   id: number;

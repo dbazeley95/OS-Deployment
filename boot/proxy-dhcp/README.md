@@ -21,6 +21,8 @@ points machines at iPXE, which then chains to the Worker over HTTPS.
 
 You can, if you control the main DHCP server (e.g. a router/firewall that
 lets you set the "next server"/boot filename options) — that removes the
-need for a separate proxyDHCP box entirely. `dnsmasq --proxy-dhcp` is the
-fallback for networks where you don't control the DHCP server (guest
-routers, ISP-provided gear, shared infra).
+need for a separate proxyDHCP box entirely. See
+[`dhcp-option-66-67.md`](./dhcp-option-66-67.md) for how (build iPXE with
+the chainload script embedded, point option 66/67 at it). `dnsmasq
+--proxy-dhcp` is the fallback for networks where you don't control the
+DHCP server (guest routers, ISP-provided gear, shared infra).

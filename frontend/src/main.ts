@@ -402,10 +402,53 @@ profileIsoFileInput.addEventListener("change", () => {
 });
 
 const WIM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+// Parts upload in parallel rather than one at a time - sequential uploads
+// pay a full request round-trip's worth of latency per 8MB chunk before the
+// next one even starts, so throughput never gets anywhere near the actual
+// available bandwidth on a multi-GB file. HTTP/2 (which Cloudflare serves)
+// multiplexes these over one connection, so this isn't fighting the
+// browser's old per-origin connection cap.
+const WIM_UPLOAD_CONCURRENCY = 6;
 
 interface UploadSource {
   size: number;
   slice(start: number, end: number): Blob;
+}
+
+async function uploadPartsConcurrently(
+  uploadId: string,
+  key: string,
+  totalChunks: number,
+  source: UploadSource,
+  onProgress: (completed: number) => void
+): Promise<{ partNumber: number; etag: string }[]> {
+  const parts: { partNumber: number; etag: string }[] = new Array(totalChunks);
+  let nextIndex = 0;
+  let completed = 0;
+  let stopped = false;
+  let firstError: unknown;
+
+  async function worker() {
+    while (!stopped) {
+      const i = nextIndex++;
+      if (i >= totalChunks) return;
+      try {
+        const chunk = source.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
+        parts[i] = await api.uploadPart(uploadId, key, i + 1, chunk);
+        completed++;
+        onProgress(completed);
+      } catch (err) {
+        stopped = true;
+        firstError = err;
+        return;
+      }
+    }
+  }
+
+  const workerCount = Math.min(WIM_UPLOAD_CONCURRENCY, totalChunks);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  if (firstError) throw firstError;
+  return parts;
 }
 
 // Shared by both "upload a WIM directly" and "extract from an ISO" - the
@@ -425,15 +468,11 @@ async function uploadWimSource(key: string, source: UploadSource, inputsToDisabl
   try {
     const created = await api.createUpload(key);
     uploadId = created.uploadId;
-    const parts: { partNumber: number; etag: string }[] = [];
-    for (let i = 0; i < totalChunks; i++) {
-      const chunk = source.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
-      const part = await api.uploadPart(uploadId, key, i + 1, chunk);
-      parts.push(part);
-      const percent = Math.round(((i + 1) / totalChunks) * 100);
+    const parts = await uploadPartsConcurrently(uploadId, key, totalChunks, source, (completed) => {
+      const percent = Math.round((completed / totalChunks) * 100);
       profileWimProgressBar.value = percent;
-      profileWimProgressText.textContent = `Uploading... ${percent}% (${i + 1}/${totalChunks})`;
-    }
+      profileWimProgressText.textContent = `Uploading... ${percent}% (${completed}/${totalChunks})`;
+    });
     await api.completeUpload(uploadId, key, parts);
     profileInstallWimInput.value = key;
     profileWimProgressText.textContent = "Upload complete.";

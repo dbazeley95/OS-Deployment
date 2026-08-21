@@ -1,0 +1,4 @@
+#!ipxe
+chain https://api.osd.xcet.uk/boot/${net0/mac} ||
+echo Chainload failed - booting local disk.
+sanboot --no-describe --drive 0x80 || exit

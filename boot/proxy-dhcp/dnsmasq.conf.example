@@ -24,4 +24,4 @@ dhcp-boot=tag:!efi-x86_64,undionly.kpxe
 # Once the machine is running iPXE itself (not the initial PXE ROM), chain
 # straight to the Worker so DHCP/TFTP drop out of the loop entirely.
 dhcp-userclass=set:ipxe,iPXE
-dhcp-boot=tag:ipxe,"https://os-deployment-worker.<your-subdomain>.workers.dev/boot/${net0/mac}"
+dhcp-boot=tag:ipxe,"https://api.osd.xcet.uk/boot/${net0/mac}"

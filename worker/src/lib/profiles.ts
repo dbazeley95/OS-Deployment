@@ -16,13 +16,24 @@ export interface OsProfile {
   answerFileArg: (answerFileUrl: string) => string;
 }
 
+// Pro and Education share one boot media (kernel/initrd/WIM) - only the
+// answer file differs, selecting a different WIM image index. See
+// boot/profiles/windows-11-25h2/README.md.
 export const OS_PROFILES: Record<string, OsProfile> = {
-  "windows-11": {
-    id: "windows-11",
-    label: "Windows 11 (unattend)",
-    kernel: "windows-11/boot/bootx64.efi",
-    initrd: "windows-11/boot/boot.sdi",
-    answerFile: "windows-11/autounattend.xml",
+  "windows-11-25h2-pro": {
+    id: "windows-11-25h2-pro",
+    label: "Windows 11 25H2 Pro",
+    kernel: "windows-11-25h2/boot/bootx64.efi",
+    initrd: "windows-11-25h2/boot/boot.sdi",
+    answerFile: "windows-11-25h2-pro/autounattend.xml",
+    answerFileArg: (url) => `answerfile=${url}`,
+  },
+  "windows-11-25h2-edu": {
+    id: "windows-11-25h2-edu",
+    label: "Windows 11 25H2 Education",
+    kernel: "windows-11-25h2/boot/bootx64.efi",
+    initrd: "windows-11-25h2/boot/boot.sdi",
+    answerFile: "windows-11-25h2-edu/autounattend.xml",
     answerFileArg: (url) => `answerfile=${url}`,
   },
 };

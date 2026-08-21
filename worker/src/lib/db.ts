@@ -22,12 +22,12 @@ export async function createJob(
   db: Bindings["DB"],
   mac: string,
   osProfile: string,
-  hostname?: string
+  opts?: { hostname?: string; technician?: string }
 ): Promise<number> {
-  await upsertDevice(db, mac, hostname);
+  await upsertDevice(db, mac, opts?.hostname);
   const { meta } = await db
-    .prepare(`INSERT INTO deployment_jobs (device_mac, os_profile) VALUES (?1, ?2)`)
-    .bind(mac, osProfile)
+    .prepare(`INSERT INTO deployment_jobs (device_mac, os_profile, technician) VALUES (?1, ?2, ?3)`)
+    .bind(mac, osProfile, opts?.technician ?? null)
     .run();
   return meta.last_row_id as number;
 }
@@ -73,13 +73,15 @@ export async function updateJobStatus(
   db: Bindings["DB"],
   id: number,
   status: JobStatus,
-  log?: string
+  log?: string,
+  technician?: string
 ): Promise<void> {
   await db
     .prepare(
-      `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log), updated_at = datetime('now')
+      `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log),
+         technician = COALESCE(?4, technician), updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, status, log ?? null)
+    .bind(id, status, log ?? null, technician ?? null)
     .run();
 }

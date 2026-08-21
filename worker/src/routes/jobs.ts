@@ -25,7 +25,7 @@ jobsRoute.post("/", async (c) => {
   if (!body.os_profile || !getProfile(body.os_profile)) {
     return c.json({ error: `os_profile must be one of: ${listProfiles().map((p) => p.id).join(", ")}` }, 400);
   }
-  const id = await createJob(c.env.DB, body.mac.toLowerCase(), body.os_profile, body.hostname);
+  const id = await createJob(c.env.DB, body.mac.toLowerCase(), body.os_profile, { hostname: body.hostname });
   return c.json({ id }, 201);
 });
 

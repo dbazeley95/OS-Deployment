@@ -47,23 +47,40 @@ VITE_API_BASE=http://localhost:8787 npm run dev
 
 ### 3. Upload the Windows image
 
-See `boot/profiles/windows-11/README.md` for the full walkthrough (trimming
-`install.wim` to one edition, which files come from where on the ISO), then
-push them to R2:
+See `boot/profiles/windows-11-25h2/README.md` for the full walkthrough
+(trimming `install.wim` to the Pro + Education indices, which files come
+from where on the ISO), then push them to R2:
 
 ```bash
-scripts/upload-image.sh ./boot/bootx64.efi windows-11/boot/bootx64.efi
-scripts/upload-image.sh ./boot/boot.sdi windows-11/boot/boot.sdi
-scripts/upload-image.sh ./install-trimmed.wim windows-11/sources/install.wim
-scripts/upload-image.sh ./boot/profiles/windows-11/autounattend.xml windows-11/autounattend.xml
+scripts/upload-image.sh ./boot/bootx64.efi windows-11-25h2/boot/bootx64.efi
+scripts/upload-image.sh ./boot/boot.sdi windows-11-25h2/boot/boot.sdi
+scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim
+scripts/upload-image.sh ./boot/profiles/windows-11-25h2/domain-join.ps1 windows-11-25h2/domain-join.ps1
+scripts/upload-image.sh ./boot/profiles/windows-11-25h2-pro/autounattend.xml windows-11-25h2-pro/autounattend.xml
+scripts/upload-image.sh ./boot/profiles/windows-11-25h2-edu/autounattend.xml windows-11-25h2-edu/autounattend.xml
+```
+
+### 3b. Provision technicians
+
+`/boot/:mac` requires HTTP Basic Auth against a `technicians` D1 table —
+there's no self-service signup on purpose. Compute a salted, peppered hash
+and print the SQL to insert it:
+
+```bash
+PASSWORD_PEPPER=<same value as the WORKER_PASSWORD_PEPPER GitHub secret> \
+  node scripts/add-technician.mjs <username> <password>
+# then run the SQL it prints, e.g.:
+npx wrangler d1 execute os-deployment --remote --command "<printed SQL>"
 ```
 
 ### 4. Deploy
 
 Push to `main` and GitHub Actions deploys the Worker and Pages site (see
-`.github/workflows/`). Set repo secrets `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID`, and repo variable `WORKER_API_BASE` (your deployed
-Worker's URL) for the Pages build to point at the right API.
+`.github/workflows/`). Set repo secrets `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, and `WORKER_PASSWORD_PEPPER` (any long random
+string — CI sets it as the Worker's `PASSWORD_PEPPER` secret on every
+deploy), and repo variable `WORKER_API_BASE` (your deployed Worker's URL)
+for the Pages build to point at the right API.
 
 ### 5. Custom domains
 
@@ -87,13 +104,22 @@ your local network rather than in the cloud.
 
 ## Using it
 
-1. Open the admin UI, enter a target machine's MAC address, pick an OS
-   profile, click "Queue reinstall".
-2. PXE-boot that machine (or reboot it with network boot as the first boot
-   option). It chains through your local proxyDHCP -> iPXE ->
-   `https://<worker>/boot/<mac>` -> gets the OS-specific boot script ->
-   installs unattended -> phones home to mark the job complete.
-3. Watch the job flip from `pending` -> `booted` -> `complete` in the UI.
+Two ways to trigger a deployment:
+
+- **Self-service (typical)**: PXE-boot the machine (or reboot it with network
+  boot as the first boot option). It chains through your local proxyDHCP ->
+  iPXE -> `https://<worker>/boot/<mac>`, which prompts the technician for
+  their username/password (iPXE's native credential prompt on a 401,
+  cached for the rest of the session), then shows a menu of OS profiles.
+  Picking one creates the job, installs unattended, and — for Windows — asks
+  at first logon whether to join the domain.
+- **Pre-staged (optional)**: open the admin UI, enter a target machine's MAC
+  address, pick a profile, click "Queue reinstall" ahead of time. The
+  technician still has to authenticate at the PXE prompt, but the menu is
+  skipped since a job is already waiting.
+
+Either way, watch the job flip from `pending` -> `booted` -> `complete` in
+the UI, along with which technician triggered it.
 
 ## Security
 

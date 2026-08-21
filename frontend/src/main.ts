@@ -38,6 +38,12 @@ const profileForm = document.querySelector<HTMLFormElement>("#profile-form")!;
 const profileIdInput = document.querySelector<HTMLInputElement>("#profile-id")!;
 const profileSubmitBtn = document.querySelector<HTMLButtonElement>("#profile-submit")!;
 const profileCancelBtn = document.querySelector<HTMLButtonElement>("#profile-cancel")!;
+const profileInstallWimInput = document.querySelector<HTMLInputElement>("#profile-install-wim")!;
+const profileWimFileInput = document.querySelector<HTMLInputElement>("#profile-wim-file")!;
+const profileWimUploadBtn = document.querySelector<HTMLButtonElement>("#profile-wim-upload-btn")!;
+const profileWimProgress = document.querySelector<HTMLElement>("#profile-wim-progress")!;
+const profileWimProgressBar = document.querySelector<HTMLProgressElement>("#profile-wim-progress-bar")!;
+const profileWimProgressText = document.querySelector<HTMLElement>("#profile-wim-progress-text")!;
 
 const appsBody = document.querySelector<HTMLElement>("#apps-body")!;
 const appForm = document.querySelector<HTMLFormElement>("#app-form")!;
@@ -298,6 +304,9 @@ function resetProfileForm() {
   profileIdInput.disabled = false;
   profileSubmitBtn.textContent = "Add profile";
   profileCancelBtn.hidden = true;
+  profileWimUploadBtn.disabled = true;
+  profileWimProgress.hidden = true;
+  profileWimProgressBar.value = 0;
 }
 
 function resetAppForm() {
@@ -379,6 +388,56 @@ profileForm.addEventListener("submit", async (e) => {
 });
 
 profileCancelBtn.addEventListener("click", resetProfileForm);
+
+profileWimFileInput.addEventListener("change", () => {
+  profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
+});
+
+const WIM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+
+profileWimUploadBtn.addEventListener("click", async () => {
+  const file = profileWimFileInput.files?.[0];
+  if (!file) return;
+  const profileId = profileIdInput.value.trim();
+  if (!profileId) {
+    showError(new Error("Enter a profile ID above before uploading a WIM."));
+    return;
+  }
+  const key = `${profileId}/sources/${file.name}`;
+
+  errorEl.textContent = "";
+  profileWimUploadBtn.disabled = true;
+  profileWimFileInput.disabled = true;
+  profileWimProgress.hidden = false;
+  profileWimProgressBar.value = 0;
+  profileWimProgressText.textContent = "Starting upload...";
+
+  const totalChunks = Math.ceil(file.size / WIM_UPLOAD_CHUNK_BYTES);
+  let uploadId: string | undefined;
+  try {
+    const created = await api.createUpload(key);
+    uploadId = created.uploadId;
+    const parts: { partNumber: number; etag: string }[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = file.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
+      const part = await api.uploadPart(uploadId, key, i + 1, chunk);
+      parts.push(part);
+      const percent = Math.round(((i + 1) / totalChunks) * 100);
+      profileWimProgressBar.value = percent;
+      profileWimProgressText.textContent = `Uploading... ${percent}% (${i + 1}/${totalChunks})`;
+    }
+    await api.completeUpload(uploadId, key, parts);
+    profileInstallWimInput.value = key;
+    profileWimProgressText.textContent = "Upload complete.";
+  } catch (err) {
+    if (uploadId) await api.abortUpload(uploadId, key).catch(() => {});
+    profileWimProgress.hidden = true;
+    showError(err);
+  } finally {
+    profileWimFileInput.disabled = false;
+    profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
+  }
+});
 
 profilesBody.addEventListener("click", async (e) => {
   const target = e.target as HTMLElement;

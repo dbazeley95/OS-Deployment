@@ -130,6 +130,34 @@
         font-weight: 500;
       }
 
+      .field-wide {
+        flex-basis: 100%;
+      }
+
+      .upload-row {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .upload-row input[type="file"] {
+        max-width: 220px;
+      }
+
+      .upload-progress {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.3rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .upload-progress progress {
+        flex: 1;
+        height: 6px;
+        accent-color: var(--accent);
+      }
+
       input,
       select,
       button {
@@ -554,6 +582,17 @@
           <div class="field">
             <label for="profile-install-wim">Install WIM (R2 key)</label>
             <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
+          </div>
+          <div class="field field-wide">
+            <label for="profile-wim-file">Or upload a WIM directly</label>
+            <div class="upload-row">
+              <input id="profile-wim-file" type="file" accept=".wim" />
+              <button type="button" id="profile-wim-upload-btn" disabled>Upload</button>
+            </div>
+            <div class="upload-progress" id="profile-wim-progress" hidden>
+              <progress id="profile-wim-progress-bar" max="100" value="0"></progress>
+              <span id="profile-wim-progress-text"></span>
+            </div>
           </div>
           <div class="field">
             <label for="profile-image-index">Image index</label>

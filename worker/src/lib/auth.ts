@@ -61,6 +61,47 @@ export async function verifyTechnicianCredentials(
   return timingSafeEqual(computed, row.password_hash);
 }
 
+function base64UrlEncode(s: string): string {
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecode(s: string): string {
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
+  return atob(padded + pad);
+}
+
+/**
+ * Signed, stateless admin-UI session tokens - `<base64url payload>.<hmac hex>`,
+ * verified against the same PASSWORD_PEPPER secret used for technician
+ * passwords (domain-separated via the "session:" prefix). Used by
+ * worker/src/routes/auth.ts (login/logout) and the session-check middleware
+ * in worker/src/index.ts that gates /api/devices, /api/jobs, /api/catalog -
+ * NOT /api/deploy/* (WinPE's own credential model) or /boot/*, /images/*.
+ */
+export async function signSessionToken(pepper: string, username: string, ttlSeconds: number): Promise<string> {
+  const payload = base64UrlEncode(JSON.stringify({ u: username, exp: Math.floor(Date.now() / 1000) + ttlSeconds }));
+  const sig = await hmacSha256Hex(pepper, `session:${payload}`);
+  return `${payload}.${sig}`;
+}
+
+export async function verifySessionToken(pepper: string, token: string | undefined | null): Promise<string | null> {
+  if (!token) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expectedSig = await hmacSha256Hex(pepper, `session:${payload}`);
+  if (!timingSafeEqual(sig, expectedSig)) return null;
+  let parsed: { u?: unknown; exp?: unknown };
+  try {
+    parsed = JSON.parse(base64UrlDecode(payload));
+  } catch {
+    return null;
+  }
+  if (typeof parsed.u !== "string" || typeof parsed.exp !== "number") return null;
+  if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
+  return parsed.u;
+}
+
 /**
  * Verifies HTTP Basic Auth against the technicians table. iPXE natively
  * prompts for credentials on a 401 and caches them per-host for the rest of

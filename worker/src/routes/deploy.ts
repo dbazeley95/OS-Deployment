@@ -9,7 +9,7 @@ const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const VALID_POST_ACTIONS: PostAction[] = ["domain-join", "install-app", "autopilot"];
 
 /**
- * JSON API for the WinPE deploy script (boot/winpe/Deploy.ps1) - the
+ * JSON API for the WinPE deploy GUI (boot/winpe/DeployGui.ps1) - the
  * PowerShell equivalent of the iPXE Basic-Auth-driven /boot/:mac flow in
  * boot.ts, since a WinPE script doesn't get HTTP Basic Auth prompting for
  * free the way iPXE does.
@@ -20,10 +20,16 @@ function imageUrl(origin: string, key: string): string {
   return `${origin}/images/${key}`;
 }
 
-function deploymentPayload(origin: string, profileId: string, postAction: PostAction, appId?: string | null) {
-  const profile = getProfile(profileId);
+async function deploymentPayload(
+  db: Bindings["DB"],
+  origin: string,
+  profileId: string,
+  postAction: PostAction,
+  appId?: string | null
+) {
+  const profile = await getProfile(db, profileId);
   if (!profile) return null;
-  const app = appId ? getApp(appId) : undefined;
+  const app = appId ? await getApp(db, appId) : undefined;
   return {
     status: "ready" as const,
     profile: profile.id,
@@ -55,13 +61,18 @@ deployRoute.post("/auth", async (c) => {
   const job = await getPendingJobForMac(c.env.DB, mac);
 
   if (job?.post_action) {
-    const payload = deploymentPayload(origin, job.os_profile, job.post_action, job.app_id);
+    const payload = await deploymentPayload(c.env.DB, origin, job.os_profile, job.post_action, job.app_id);
     if (payload) return c.json(payload);
   }
   if (job) {
-    return c.json({ status: "choose-action", profile: job.os_profile, apps: listApps() });
+    return c.json({ status: "choose-action", profile: job.os_profile, apps: await listApps(c.env.DB) });
   }
-  return c.json({ status: "choose", profiles: listProfiles().map((p) => ({ id: p.id, label: p.label })), apps: listApps() });
+  const profiles = await listProfiles(c.env.DB);
+  return c.json({
+    status: "choose",
+    profiles: profiles.map((p) => ({ id: p.id, label: p.label })),
+    apps: await listApps(c.env.DB),
+  });
 });
 
 deployRoute.post("/select", async (c) => {
@@ -86,14 +97,16 @@ deployRoute.post("/select", async (c) => {
     return c.json({ error: "invalid technician credentials" }, 401);
   }
 
-  if (!body.profile || !getProfile(body.profile)) {
-    return c.json({ error: `profile must be one of: ${listProfiles().map((p) => p.id).join(", ")}` }, 400);
+  if (!body.profile || !(await getProfile(c.env.DB, body.profile))) {
+    const profiles = await listProfiles(c.env.DB);
+    return c.json({ error: `profile must be one of: ${profiles.map((p) => p.id).join(", ")}` }, 400);
   }
   if (!body.postAction || !VALID_POST_ACTIONS.includes(body.postAction as PostAction)) {
     return c.json({ error: `postAction must be one of: ${VALID_POST_ACTIONS.join(", ")}` }, 400);
   }
-  if (body.postAction === "install-app" && (!body.appId || !getApp(body.appId))) {
-    return c.json({ error: `appId must be one of: ${listApps().map((a) => a.id).join(", ")}` }, 400);
+  if (body.postAction === "install-app" && (!body.appId || !(await getApp(c.env.DB, body.appId)))) {
+    const apps = await listApps(c.env.DB);
+    return c.json({ error: `appId must be one of: ${apps.map((a) => a.id).join(", ")}` }, 400);
   }
 
   const mac = body.mac.toLowerCase();
@@ -106,6 +119,6 @@ deployRoute.post("/select", async (c) => {
   });
 
   const origin = new URL(c.req.url).origin;
-  const payload = deploymentPayload(origin, body.profile, postAction, body.appId);
+  const payload = await deploymentPayload(c.env.DB, origin, body.profile, postAction, body.appId);
   return c.json(payload);
 });

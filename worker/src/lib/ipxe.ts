@@ -9,11 +9,10 @@ export function buildBootScript(profile: OsProfile, origin: string): string {
   const kernelUrl = `${origin}/images/${profile.kernel}`;
   const initrdUrl = `${origin}/images/${profile.initrd}`;
   const answerFileUrl = `${origin}/images/${profile.answerFile}`;
-  const answerArg = profile.answerFileArg(answerFileUrl);
 
   return `#!ipxe
 echo Deploying profile: ${profile.label}
-kernel ${kernelUrl} ${answerArg} ${profile.extraArgs ?? ""}
+kernel ${kernelUrl} answerfile=${answerFileUrl}
 initrd ${initrdUrl}
 boot
 `;

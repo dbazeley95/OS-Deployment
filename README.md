@@ -9,33 +9,41 @@ Currently deploys **Windows only** — the design is OS-agnostic (adding a
 profile is one entry in `worker/src/lib/profiles.ts` plus an answer file
 under `boot/profiles/`), but Windows is the one wired up end to end.
 
-**Primary path: a signed WinPE image + PowerShell script** (`boot/winpe/`),
-delivered via WDS or a bootable USB stick — no custom unsigned binary in
-the boot chain, so it works cleanly under UEFI Secure Boot, and it's what
-replaces MDT. An older iPXE-based path (`boot/proxy-dhcp/`,
-`boot/profiles/`) is also documented as an alternative, but it depends on
-a custom-built `ipxe.efi` that Secure Boot will reject unless disabled.
+**Primary path: a signed WinPE image running a Windows Forms GUI**
+(`boot/winpe/DeployGui.ps1`), delivered via WDS or a bootable USB stick —
+no custom unsigned binary in the boot chain, so it works cleanly under
+UEFI Secure Boot, and it's what replaces MDT's Lite Touch wizard. The GUI
+script is fetched fresh from R2 on every boot rather than baked into the
+image, and the OS profile/app catalog it offers is managed from the admin
+UI (a "cloud Deployment Workbench") instead of a code change + redeploy.
+An older iPXE-based path (`boot/proxy-dhcp/`, `boot/profiles/`) is also
+documented as an alternative, but it depends on a custom-built `ipxe.efi`
+that Secure Boot will reject unless disabled.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and a sequence
 diagram of a deployment end to end.
 
 ## Layout
 
-- `worker/` — Cloudflare Worker: REST API (devices/jobs), `/api/deploy/*`
-  (JSON API the WinPE `Deploy.ps1` script calls), `/boot/:mac` (the older
-  iPXE-facing route, generates a per-machine iPXE script from D1 job
-  state), and `/images/*`, which streams WIMs/answer files/scripts out of
-  R2.
-- `frontend/` — Cloudflare Pages: minimal admin UI to register devices, pick
-  an OS profile, queue a reinstall, and watch job status (including the
-  post-imaging action and which technician triggered it).
+- `worker/` — Cloudflare Worker: `/api/auth/*` (technician login for the
+  admin UI), `/api/catalog/*` (OS profile/app catalog CRUD, the cloud
+  editor), REST API (devices/jobs), `/api/deploy/*` (JSON API the WinPE
+  `DeployGui.ps1` GUI calls), `/boot/:mac` (the older iPXE-facing route,
+  generates a per-machine iPXE script from D1 job state), and `/images/*`,
+  which streams WIMs/answer files/scripts out of R2.
+- `frontend/` — Cloudflare Pages: admin UI, gated behind a technician
+  login — register devices, pick an OS profile, queue a reinstall, watch
+  job status (including the post-imaging action and which technician
+  triggered it), and manage the OS profile/app catalog.
 - `boot/winpe/` — the primary deployment path: build instructions for the
-  signed WinPE image, `Deploy.ps1` (runs inside WinPE), `PostAction.ps1`
-  (runs at first logon).
+  signed WinPE image, `DeployGui.ps1` (the Forms GUI, fetched fresh from
+  R2 on every boot - not baked into the image), `PostAction.ps1` (runs at
+  first logon).
 - `boot/proxy-dhcp/`, `boot/profiles/` — the older iPXE-based path and the
   Windows unattend answer files (shared by both paths).
 - `scripts/upload-image.sh` — pushes a local boot file/WIM/script into the
-  R2 images bucket.
+  R2 images bucket. (`boot/winpe/*.ps1` is the exception — synced to R2
+  automatically on push, see `.github/workflows/sync-winpe-scripts.yml`.)
 
 ## Setup
 
@@ -68,10 +76,13 @@ essentials to R2:
 
 ```bash
 scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim
-scripts/upload-image.sh ./boot/winpe/PostAction.ps1 winpe/PostAction.ps1
 scripts/upload-image.sh ./boot/profiles/windows-11-25h2-pro/autounattend.xml windows-11-25h2-pro/autounattend.xml
 scripts/upload-image.sh ./boot/profiles/windows-11-25h2-edu/autounattend.xml windows-11-25h2-edu/autounattend.xml
 ```
+
+(`boot/winpe/DeployGui.ps1` and `PostAction.ps1` don't need a manual
+upload — pushing to `main` syncs them to R2 automatically, see
+`.github/workflows/sync-winpe-scripts.yml`.)
 
 Only needed if you're also using the older iPXE path (`boot/proxy-dhcp/`):
 
@@ -80,15 +91,18 @@ scripts/upload-image.sh ./boot/bootx64.efi windows-11-25h2/boot/bootx64.efi
 scripts/upload-image.sh ./boot/boot.sdi windows-11-25h2/boot/boot.sdi
 ```
 
-For the optional `install-app` post-imaging action, upload each
-installer/script and add a matching entry to `worker/src/lib/apps.ts`.
+The two profiles above are seeded by migration `0004_catalog.sql`. For a
+new edition, app, or the `install-app` post-imaging action, upload the
+installer/script with `scripts/upload-image.sh` and add a matching entry
+from the admin UI's "OS profiles"/"Apps" sections — no code change or
+redeploy needed.
 
 ### 3b. Provision technicians
 
-Both `/boot/:mac` (Basic Auth) and `/api/deploy/*` (credentials in the
-request body) check against the same `technicians` D1 table — there's no
-self-service signup on purpose. Compute a salted, peppered hash
-and print the SQL to insert it:
+`/boot/:mac` (Basic Auth), `/api/deploy/*` (credentials in the request
+body), and now `/api/auth/login` (the admin UI itself) all check against
+the same `technicians` D1 table — there's no self-service signup on
+purpose. Compute a salted, peppered hash and print the SQL to insert it:
 
 ```bash
 PASSWORD_PEPPER=<same value as the WORKER_PASSWORD_PEPPER GitHub secret> \
@@ -131,14 +145,20 @@ custom `ipxe.efi` won't run with Secure Boot enabled.)
 
 ## Using it
 
-Boot the machine from the WinPE image (network boot via WDS, or the USB
-stick). `Deploy.ps1` prompts for technician credentials, then either an OS
-profile and post-imaging action (domain join / install an app / leave at
-OOBE for Autopilot) if nothing's pre-staged, or picks up a job already
-queued from the admin UI. It applies the image, and at first logon the
-generalized `PostAction.ps1` runs whichever action was chosen.
+Log in to the admin UI with a technician account (see 3b above) to
+register devices, pre-stage a reinstall, watch job status, and manage the
+OS profile/app catalog.
 
-Pre-staging (optional): open the admin UI, enter a target machine's MAC
+Boot the target machine from the WinPE image (network boot via WDS, or the
+USB stick). A GUI window (`DeployGui.ps1`, fetched fresh from R2 - always
+reflects the current catalog) prompts for technician credentials, then
+either an OS profile and post-imaging action (domain join / install an
+app / leave at OOBE for Autopilot) if nothing's pre-staged, or picks up a
+job already queued from the admin UI. It applies the image with a live
+progress log, and at first logon the generalized `PostAction.ps1` runs
+whichever action was chosen.
+
+Pre-staging (optional): in the admin UI, enter a target machine's MAC
 address, pick a profile, click "Queue reinstall" ahead of time — the
 technician still authenticates at boot, but skips the prompts for whatever
 was already decided.
@@ -148,6 +168,7 @@ the UI, along with which technician triggered it and which post-action ran.
 
 ## Security
 
-Read the "Security notes" section in `ARCHITECTURE.md` before pointing this
-at real hardware — notably: put Cloudflare Access in front of the admin UI
-and API, and keep PXE traffic on a segmented VLAN.
+Read the "Security notes" section in `ARCHITECTURE.md` before pointing
+this at real hardware — notably: the admin UI now requires a technician
+login on its own, but consider Cloudflare Access as an additional layer,
+and keep PXE traffic on a segmented VLAN.

@@ -13,17 +13,14 @@ jobsRoute.get("/", async (c) => {
   return c.json(jobs);
 });
 
-jobsRoute.get("/profiles", (c) => {
-  return c.json(listProfiles());
-});
-
 jobsRoute.post("/", async (c) => {
   const body = await c.req.json<{ mac?: string; os_profile?: string; hostname?: string }>().catch(() => null);
   if (!body?.mac || !MAC_RE.test(body.mac)) {
     return c.json({ error: "mac is required and must look like aa:bb:cc:dd:ee:ff" }, 400);
   }
-  if (!body.os_profile || !getProfile(body.os_profile)) {
-    return c.json({ error: `os_profile must be one of: ${listProfiles().map((p) => p.id).join(", ")}` }, 400);
+  if (!body.os_profile || !(await getProfile(c.env.DB, body.os_profile))) {
+    const profiles = await listProfiles(c.env.DB);
+    return c.json({ error: `os_profile must be one of: ${profiles.map((p) => p.id).join(", ")}` }, 400);
   }
   const id = await createJob(c.env.DB, body.mac.toLowerCase(), body.os_profile, { hostname: body.hostname });
   return c.json({ id }, 201);

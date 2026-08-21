@@ -24,27 +24,79 @@ export interface DeploymentJob {
 export interface OsProfile {
   id: string;
   label: string;
+  installWim: string;
+  imageIndex: number;
+  answerFile: string;
+  kernel: string | null;
+  initrd: string | null;
+}
+
+export type InstallKind = "msi" | "exe" | "script";
+
+export interface AppEntry {
+  id: string;
+  label: string;
+  r2Key: string;
+  installKind: InstallKind;
+}
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number
+  ) {
+    super(message);
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Request failed: ${res.status}`);
+    throw new ApiError((body as { error?: string }).error ?? `Request failed: ${res.status}`, res.status);
   }
   return res.json() as Promise<T>;
 }
 
+export { ApiError };
+
 export const api = {
+  // Auth
+  me: () => request<{ username: string }>("/api/auth/me"),
+  login: (username: string, password: string) =>
+    request<{ username: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
+
+  // Devices / jobs
   listDevices: () => request<Device[]>("/api/devices"),
   listJobs: () => request<DeploymentJob[]>("/api/jobs"),
-  listProfiles: () => request<OsProfile[]>("/api/jobs/profiles"),
   createJob: (mac: string, os_profile: string, hostname?: string) =>
     request<{ id: number }>("/api/jobs", {
       method: "POST",
       body: JSON.stringify({ mac, os_profile, hostname }),
     }),
+
+  // Catalog editor ("cloud Deployment Workbench")
+  listCatalogProfiles: () => request<OsProfile[]>("/api/catalog/profiles"),
+  createCatalogProfile: (profile: OsProfile) =>
+    request<{ ok: true }>("/api/catalog/profiles", { method: "POST", body: JSON.stringify(profile) }),
+  updateCatalogProfile: (id: string, profile: OsProfile) =>
+    request<{ ok: true }>(`/api/catalog/profiles/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(profile),
+    }),
+  deleteCatalogProfile: (id: string) =>
+    request<{ ok: true }>(`/api/catalog/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  listCatalogApps: () => request<AppEntry[]>("/api/catalog/apps"),
+  createCatalogApp: (app: AppEntry) =>
+    request<{ ok: true }>("/api/catalog/apps", { method: "POST", body: JSON.stringify(app) }),
+  updateCatalogApp: (id: string, app: AppEntry) =>
+    request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(app) }),
+  deleteCatalogApp: (id: string) =>
+    request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

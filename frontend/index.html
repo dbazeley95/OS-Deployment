@@ -152,6 +152,10 @@
         color: var(--text-muted);
       }
 
+      .upload-progress[hidden] {
+        display: none;
+      }
+
       .upload-progress progress {
         flex: 1;
         height: 6px;
@@ -193,6 +197,10 @@
 
       button:hover {
         filter: brightness(1.06);
+      }
+
+      .table-wrap {
+        overflow-x: auto;
       }
 
       table {
@@ -544,12 +552,14 @@
           </div>
         </div>
         <p class="hint">Deployments are always started on-device (the WinPE wizard) - this is a log, not a scheduler.</p>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>ID</th><th>MAC</th><th>Task sequence</th><th>Status</th><th>Domain join</th><th>Technician</th><th>Updated</th></tr>
           </thead>
           <tbody id="jobs-body"></tbody>
         </table>
+        </div>
       </section>
       </div>
 
@@ -557,12 +567,14 @@
       <section class="card">
         <h2>Devices</h2>
         <p class="hint">Each device's full job history is one click away.</p>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>MAC</th><th>Hostname</th><th>Serial</th><th>Last seen</th><th></th></tr>
           </thead>
           <tbody id="devices-body"></tbody>
         </table>
+        </div>
       </section>
       </div>
 
@@ -605,12 +617,14 @@
           <button type="submit" id="profile-submit">Add profile</button>
           <button type="button" id="profile-cancel" hidden>Cancel</button>
         </form>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>ID</th><th>Label</th><th>Install WIM</th><th>Index</th><th>Answer file</th><th></th></tr>
           </thead>
           <tbody id="profiles-body"></tbody>
         </table>
+        </div>
       </section>
       </div>
 
@@ -642,12 +656,14 @@
           <button type="submit" id="app-submit">Add app</button>
           <button type="button" id="app-cancel" hidden>Cancel</button>
         </form>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>ID</th><th>Label</th><th>R2 key</th><th>Kind</th><th></th></tr>
           </thead>
           <tbody id="apps-body"></tbody>
         </table>
+        </div>
       </section>
       </div>
 
@@ -656,12 +672,14 @@
         <h2>Task sequences</h2>
         <p class="hint">Bundles an OS profile with an ordered list of steps to run - what the WinPE wizard offers.</p>
         <button type="button" id="ts-new-btn">New task sequence</button>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr><th>ID</th><th>Label</th><th>OS profile</th><th>Steps</th><th></th></tr>
           </thead>
           <tbody id="task-sequences-body"></tbody>
         </table>
+        </div>
       </section>
 
       <dialog id="ts-wizard">

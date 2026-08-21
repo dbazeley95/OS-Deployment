@@ -58,10 +58,15 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only set Content-Type when actually sending a body - a GET with no body
+  // needs no headers at all, so it stays a CORS "simple request" and skips
+  // the preflight OPTIONS round-trip entirely.
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) };
+  if (init?.body) headers["Content-Type"] = "application/json";
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

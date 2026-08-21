@@ -17,12 +17,16 @@ points machines at iPXE, which then chains to the Worker over HTTPS.
    iPXE requests `https://.../boot/<mac>` -> Worker returns either the
    install script or the "no pending job" idle script.
 
-## Why not skip proxyDHCP and set DHCP option 66/67 directly?
+## Three ways to get iPXE running, pick whichever fits your network
 
-You can, if you control the main DHCP server (e.g. a router/firewall that
-lets you set the "next server"/boot filename options) — that removes the
-need for a separate proxyDHCP box entirely. See
-[`dhcp-option-66-67.md`](./dhcp-option-66-67.md) for how (build iPXE with
-the chainload script embedded, point option 66/67 at it). `dnsmasq
---proxy-dhcp` is the fallback for networks where you don't control the
-DHCP server (guest routers, ISP-provided gear, shared infra).
+1. **This proxyDHCP setup** — for networks where you don't control the main
+   DHCP server (guest routers, ISP-provided gear, shared infra).
+2. **DHCP option 66/67 directly** — if you control the main DHCP server's
+   "next server"/boot filename options. See
+   [`dhcp-option-66-67.md`](./dhcp-option-66-67.md).
+3. **UEFI HTTP(S) Boot** — no DHCP changes at all on UEFI hardware that
+   supports it; the boot URL is set directly in each machine's firmware.
+   See [`https-boot.md`](./https-boot.md).
+
+All three end up running the same `embed.ipxe` chainload script — they only
+differ in how the machine gets pointed at it.

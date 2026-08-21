@@ -6,7 +6,9 @@
 export interface OsProfile {
   id: string;
   label: string;
+  /** iPXE boot path only - unused by the WinPE/DISM deploy flow. */
   kernel: string;
+  /** iPXE boot path only - unused by the WinPE/DISM deploy flow. */
   initrd: string;
   /** Extra iPXE kernel args appended after the answer-file arg. */
   extraArgs?: string;
@@ -14,6 +16,10 @@ export interface OsProfile {
   answerFile: string;
   /** How the installer expects the answer file to be passed. */
   answerFileArg: (answerFileUrl: string) => string;
+  /** R2 key for this profile's WIM, applied via `DISM /Apply-Image` in the WinPE deploy flow. */
+  installWim: string;
+  /** WIM image index within installWim for this edition. */
+  imageIndex: number;
 }
 
 // Pro and Education share one boot media (kernel/initrd/WIM) - only the
@@ -27,6 +33,9 @@ export const OS_PROFILES: Record<string, OsProfile> = {
     initrd: "windows-11-25h2/boot/boot.sdi",
     answerFile: "windows-11-25h2-pro/autounattend.xml",
     answerFileArg: (url) => `answerfile=${url}`,
+    // ADJUST-ME: verify with `dism /Get-WimInfo /WimFile:install.wim`
+    installWim: "windows-11-25h2/sources/install.wim",
+    imageIndex: 1,
   },
   "windows-11-25h2-edu": {
     id: "windows-11-25h2-edu",
@@ -35,6 +44,9 @@ export const OS_PROFILES: Record<string, OsProfile> = {
     initrd: "windows-11-25h2/boot/boot.sdi",
     answerFile: "windows-11-25h2-edu/autounattend.xml",
     answerFileArg: (url) => `answerfile=${url}`,
+    // ADJUST-ME: verify with `dism /Get-WimInfo /WimFile:install.wim`
+    installWim: "windows-11-25h2/sources/install.wim",
+    imageIndex: 2,
   },
 };
 

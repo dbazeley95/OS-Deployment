@@ -8,20 +8,23 @@ answer file for one profile, matching an entry in
 files into the R2 bucket at the paths that entry's `kernel`/`initrd`/`answerFile`
 keys reference, using `scripts/upload-image.sh`.
 
-## Technician auth and the boot menu
+## Technician auth
 
-`/boot/:mac` and `/boot/:mac/install` both require HTTP Basic Auth against
-the `technicians` D1 table (`worker/src/lib/auth.ts`) - iPXE prompts for
+Both entry points check the same `technicians` D1 table
+(`worker/src/lib/auth.ts` / `verifyTechnicianCredentials`): the WinPE path's
+`POST /api/deploy/auth` (credentials in the JSON body) and the older iPXE
+path's `/boot/:mac`/`/boot/:mac/install` (HTTP Basic Auth - iPXE prompts for
 credentials natively on a 401 and caches them per-host for the rest of the
-boot session, so a technician is only prompted once. Provision technicians
-with `scripts/add-technician.mjs` (there's deliberately no HTTP endpoint for
-this - self-service account creation would be a hole in the same boundary
-that gates OS reinstalls).
+boot session). Provision technicians with `scripts/add-technician.mjs`
+(there's deliberately no HTTP endpoint for this - self-service account
+creation would be a hole in the same boundary that gates OS reinstalls).
 
-If an admin has already queued a job for a MAC via the admin UI, `/boot/:mac`
-serves that job's install script directly. Otherwise it serves an iPXE menu
-listing every profile in `OS_PROFILES`, and the technician's choice creates
-the job.
+If an admin has already queued a job for a MAC via the admin UI, both paths
+serve that job directly (skipping whichever prompts are already decided).
+Otherwise both offer the same catalog from `OS_PROFILES` to choose from -
+the WinPE path also offers a post-imaging action (domain join / install an
+app / leave at OOBE for Autopilot) and the app catalog from
+`worker/src/lib/apps.ts`, see `../winpe/README.md`.
 
 Adding another Windows edition/version (or reintroducing a Linux profile
 later) means adding a new subdirectory here plus a matching entry in

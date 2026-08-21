@@ -16,6 +16,8 @@ export interface DeploymentJob {
   os_profile: string;
   status: string;
   technician: string | null;
+  post_action: string | null;
+  app_id: string | null;
   updated_at: string;
 }
 

@@ -1,4 +1,4 @@
-import type { Bindings, DeploymentJob, Device, JobStatus } from "../types";
+import type { Bindings, DeploymentJob, Device, JobStatus, PostAction } from "../types";
 
 export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string) {
   await db
@@ -22,12 +22,15 @@ export async function createJob(
   db: Bindings["DB"],
   mac: string,
   osProfile: string,
-  opts?: { hostname?: string; technician?: string }
+  opts?: { hostname?: string; technician?: string; postAction?: PostAction; appId?: string }
 ): Promise<number> {
   await upsertDevice(db, mac, opts?.hostname);
   const { meta } = await db
-    .prepare(`INSERT INTO deployment_jobs (device_mac, os_profile, technician) VALUES (?1, ?2, ?3)`)
-    .bind(mac, osProfile, opts?.technician ?? null)
+    .prepare(
+      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, post_action, app_id)
+       VALUES (?1, ?2, ?3, ?4, ?5)`
+    )
+    .bind(mac, osProfile, opts?.technician ?? null, opts?.postAction ?? null, opts?.appId ?? null)
     .run();
   return meta.last_row_id as number;
 }
@@ -69,19 +72,46 @@ export async function updateLatestJobStatusForMac(
   return true;
 }
 
+/**
+ * Reuses a pending/booted job for this MAC+profile if one already exists
+ * (e.g. pre-staged via the admin UI), otherwise creates one - then marks it
+ * booted either way. Shared by /boot/:mac/install (worker/src/routes/boot.ts)
+ * and the JSON deploy API (worker/src/routes/deploy.ts) so both entry
+ * points behave identically.
+ */
+export async function resolveOrCreateJob(
+  db: Bindings["DB"],
+  mac: string,
+  profileId: string,
+  opts: { technician: string; log: string; postAction?: PostAction; appId?: string }
+): Promise<number> {
+  const existing = await getPendingJobForMac(db, mac);
+  const id =
+    existing && existing.os_profile === profileId
+      ? existing.id
+      : await createJob(db, mac, profileId, { technician: opts.technician, postAction: opts.postAction, appId: opts.appId });
+  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.postAction, opts.appId);
+  return id;
+}
+
 export async function updateJobStatus(
   db: Bindings["DB"],
   id: number,
   status: JobStatus,
   log?: string,
-  technician?: string
+  technician?: string,
+  postAction?: PostAction,
+  appId?: string
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log),
-         technician = COALESCE(?4, technician), updated_at = datetime('now')
+         technician = COALESCE(?4, technician),
+         post_action = COALESCE(?5, post_action),
+         app_id = COALESCE(?6, app_id),
+         updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, status, log ?? null, technician ?? null)
+    .bind(id, status, log ?? null, technician ?? null, postAction ?? null, appId ?? null)
     .run();
 }

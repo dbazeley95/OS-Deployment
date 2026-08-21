@@ -5,6 +5,7 @@ import { bootRoute } from "./routes/boot";
 import { devicesRoute } from "./routes/devices";
 import { jobsRoute } from "./routes/jobs";
 import { imagesRoute } from "./routes/images";
+import { deployRoute } from "./routes/deploy";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -16,5 +17,6 @@ app.route("/boot", bootRoute);
 app.route("/images", imagesRoute);
 app.route("/api/devices", devicesRoute);
 app.route("/api/jobs", jobsRoute);
+app.route("/api/deploy", deployRoute);
 
 export default app;

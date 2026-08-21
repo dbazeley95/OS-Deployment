@@ -1,5 +1,9 @@
 # Architecture
 
+> Scope: this system currently deploys Windows only. The design is
+> OS-agnostic (see `boot/profiles/README.md` for adding another profile), but
+> Windows is the one shipped end to end.
+
 ## Why hybrid, not pure-cloud
 
 Cloudflare and GitHub can host every part of this system that speaks HTTPS: the
@@ -19,7 +23,7 @@ Everything past that first PXE handshake is cloud-hosted.
 | Admin UI | Cloudflare Pages | Register devices, pick an OS profile, kick off a reinstall, watch job status |
 | API + boot script generator | Cloudflare Workers | REST API for devices/jobs, and `/boot/:mac` which returns a per-machine iPXE script |
 | State | Cloudflare D1 | Device inventory, deployment jobs, status/history |
-| Images & answer files | Cloudflare R2 | Kernels, initrds, ISOs, autoinstall/preseed/unattend files, streamed to iPXE over HTTPS |
+| Images & answer files | Cloudflare R2 | Windows boot files, WIM images, and the unattend.xml answer file, streamed to iPXE/WinPE over HTTPS |
 | CI/CD | GitHub Actions | Deploy the Worker (`wrangler deploy`) and Pages site on push to main |
 | Network boot | On-prem | `dnsmasq` proxyDHCP + iPXE chainloading to the Worker |
 
@@ -70,6 +74,6 @@ boot/       iPXE snippets, proxyDHCP config, per-OS unattended-install profiles
   make jobs single-use / short-lived so a leaked boot URL can't be replayed.
 - Windows ISOs are not redistributable — this scaffold only stores an
   `autounattend.xml` template; you supply your own licensed Windows media in
-  R2. Ubuntu/Debian netboot images are fine to mirror into R2 directly.
+  R2 (see `boot/profiles/windows-11/README.md` for trimming it to size).
 - Keep PXE/proxyDHCP on a segmented VLAN — a rogue proxyDHCP on a flat
   network can hijack any machine's boot process, including yours.

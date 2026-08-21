@@ -1,10 +1,15 @@
 # OS profiles
 
-Each subdirectory here holds the unattended-install answer file for one OS
-profile, matching an entry in `worker/src/lib/profiles.ts`. Upload the answer
-file plus its kernel/initrd (or bootloader/WIM, for Windows) into the R2
-bucket at the paths that file's `kernel`/`initrd`/`answerFile` keys reference,
-using `scripts/upload-image.sh`.
+This system currently deploys Windows only (see `windows-11/`). Each
+subdirectory holds the unattended-install answer file for one profile,
+matching an entry in `worker/src/lib/profiles.ts`. Upload the answer file
+plus its bootloader/WIM files into the R2 bucket at the paths that entry's
+`kernel`/`initrd`/`answerFile` keys reference, using `scripts/upload-image.sh`.
+
+Adding another Windows edition/version (or reintroducing a Linux profile
+later) means adding a new subdirectory here plus a matching entry in
+`OS_PROFILES` — the catalog and boot-script generator are already
+profile-agnostic.
 
 ## Note on the phone-home pattern
 

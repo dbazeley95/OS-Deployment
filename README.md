@@ -4,6 +4,10 @@ A web-based OS reinstall system: GitHub hosts the code and CI/CD, Cloudflare
 hosts the admin UI, API, and OS images, and a small on-prem proxyDHCP service
 bridges the gap that cloud services can't cross (PXE network boot).
 
+Currently deploys **Windows only** — the design is OS-agnostic (adding a
+profile is one entry in `worker/src/lib/profiles.ts` plus an answer file
+under `boot/profiles/`), but Windows is the one wired up end to end.
+
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and a sequence
 diagram of a deployment end to end.
 
@@ -14,10 +18,9 @@ diagram of a deployment end to end.
   which streams kernels/initrds/answer files out of R2.
 - `frontend/` — Cloudflare Pages: minimal admin UI to register devices, pick
   an OS profile, queue a reinstall, and watch job status.
-- `boot/` — iPXE/proxyDHCP setup notes and per-OS unattended-install answer
-  files (Ubuntu autoinstall, Debian preseed, Windows unattend).
-- `scripts/upload-image.sh` — pushes a local kernel/initrd/ISO file into the
-  R2 images bucket.
+- `boot/` — iPXE/proxyDHCP setup notes and the Windows unattend answer file.
+- `scripts/upload-image.sh` — pushes a local boot file/WIM into the R2
+  images bucket.
 
 ## Setup
 
@@ -42,18 +45,18 @@ cd frontend && npm install
 VITE_API_BASE=http://localhost:8787 npm run dev
 ```
 
-### 3. Upload OS images
+### 3. Upload the Windows image
 
-Fetch a netboot kernel/initrd for your distro of choice (e.g. Ubuntu's
-`netboot/amd64/linux` + `initrd`) and push them to R2:
+See `boot/profiles/windows-11/README.md` for the full walkthrough (trimming
+`install.wim` to one edition, which files come from where on the ISO), then
+push them to R2:
 
 ```bash
-scripts/upload-image.sh ./vmlinuz ubuntu-22.04/vmlinuz
-scripts/upload-image.sh ./initrd ubuntu-22.04/initrd
-scripts/upload-image.sh ./boot/profiles/ubuntu-22.04/autoinstall.yaml ubuntu-22.04/autoinstall.yaml
+scripts/upload-image.sh ./boot/bootx64.efi windows-11/boot/bootx64.efi
+scripts/upload-image.sh ./boot/boot.sdi windows-11/boot/boot.sdi
+scripts/upload-image.sh ./install-trimmed.wim windows-11/sources/install.wim
+scripts/upload-image.sh ./boot/profiles/windows-11/autounattend.xml windows-11/autounattend.xml
 ```
-
-Windows has extra caveats — see `boot/profiles/windows-11/README.md`.
 
 ### 4. Deploy
 

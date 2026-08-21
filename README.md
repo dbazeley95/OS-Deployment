@@ -1,26 +1,41 @@
 # OS Deployment
 
 A web-based OS reinstall system: GitHub hosts the code and CI/CD, Cloudflare
-hosts the admin UI, API, and OS images, and a small on-prem proxyDHCP service
-bridges the gap that cloud services can't cross (PXE network boot).
+hosts the admin UI, API, and OS images, and a small on-prem piece bridges
+the gap that cloud services can't cross (getting a bare-metal machine
+bootable).
 
 Currently deploys **Windows only** — the design is OS-agnostic (adding a
 profile is one entry in `worker/src/lib/profiles.ts` plus an answer file
 under `boot/profiles/`), but Windows is the one wired up end to end.
+
+**Primary path: a signed WinPE image + PowerShell script** (`boot/winpe/`),
+delivered via WDS or a bootable USB stick — no custom unsigned binary in
+the boot chain, so it works cleanly under UEFI Secure Boot, and it's what
+replaces MDT. An older iPXE-based path (`boot/proxy-dhcp/`,
+`boot/profiles/`) is also documented as an alternative, but it depends on
+a custom-built `ipxe.efi` that Secure Boot will reject unless disabled.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and a sequence
 diagram of a deployment end to end.
 
 ## Layout
 
-- `worker/` — Cloudflare Worker: REST API (devices/jobs) + `/boot/:mac`, which
-  generates a per-machine iPXE script from D1 job state, and `/images/*`,
-  which streams kernels/initrds/answer files out of R2.
+- `worker/` — Cloudflare Worker: REST API (devices/jobs), `/api/deploy/*`
+  (JSON API the WinPE `Deploy.ps1` script calls), `/boot/:mac` (the older
+  iPXE-facing route, generates a per-machine iPXE script from D1 job
+  state), and `/images/*`, which streams WIMs/answer files/scripts out of
+  R2.
 - `frontend/` — Cloudflare Pages: minimal admin UI to register devices, pick
-  an OS profile, queue a reinstall, and watch job status.
-- `boot/` — iPXE/proxyDHCP setup notes and the Windows unattend answer file.
-- `scripts/upload-image.sh` — pushes a local boot file/WIM into the R2
-  images bucket.
+  an OS profile, queue a reinstall, and watch job status (including the
+  post-imaging action and which technician triggered it).
+- `boot/winpe/` — the primary deployment path: build instructions for the
+  signed WinPE image, `Deploy.ps1` (runs inside WinPE), `PostAction.ps1`
+  (runs at first logon).
+- `boot/proxy-dhcp/`, `boot/profiles/` — the older iPXE-based path and the
+  Windows unattend answer files (shared by both paths).
+- `scripts/upload-image.sh` — pushes a local boot file/WIM/script into the
+  R2 images bucket.
 
 ## Setup
 
@@ -48,22 +63,31 @@ VITE_API_BASE=http://localhost:8787 npm run dev
 ### 3. Upload the Windows image
 
 See `boot/profiles/windows-11-25h2/README.md` for the full walkthrough
-(trimming `install.wim` to the Pro + Education indices, which files come
-from where on the ISO), then push them to R2:
+(trimming `install.wim` to the Pro + Education indices), then push the
+essentials to R2:
 
 ```bash
-scripts/upload-image.sh ./boot/bootx64.efi windows-11-25h2/boot/bootx64.efi
-scripts/upload-image.sh ./boot/boot.sdi windows-11-25h2/boot/boot.sdi
 scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim
-scripts/upload-image.sh ./boot/profiles/windows-11-25h2/domain-join.ps1 windows-11-25h2/domain-join.ps1
+scripts/upload-image.sh ./boot/winpe/PostAction.ps1 winpe/PostAction.ps1
 scripts/upload-image.sh ./boot/profiles/windows-11-25h2-pro/autounattend.xml windows-11-25h2-pro/autounattend.xml
 scripts/upload-image.sh ./boot/profiles/windows-11-25h2-edu/autounattend.xml windows-11-25h2-edu/autounattend.xml
 ```
 
+Only needed if you're also using the older iPXE path (`boot/proxy-dhcp/`):
+
+```bash
+scripts/upload-image.sh ./boot/bootx64.efi windows-11-25h2/boot/bootx64.efi
+scripts/upload-image.sh ./boot/boot.sdi windows-11-25h2/boot/boot.sdi
+```
+
+For the optional `install-app` post-imaging action, upload each
+installer/script and add a matching entry to `worker/src/lib/apps.ts`.
+
 ### 3b. Provision technicians
 
-`/boot/:mac` requires HTTP Basic Auth against a `technicians` D1 table —
-there's no self-service signup on purpose. Compute a salted, peppered hash
+Both `/boot/:mac` (Basic Auth) and `/api/deploy/*` (credentials in the
+request body) check against the same `technicians` D1 table — there's no
+self-service signup on purpose. Compute a salted, peppered hash
 and print the SQL to insert it:
 
 ```bash
@@ -97,29 +121,30 @@ zone already hosted on Cloudflare:
   variable to `https://api.osd.xcet.uk` and re-run the Pages deploy so the
   admin UI is built pointing at it.
 
-### 6. On-prem PXE proxy
+### 6. Build and deliver the WinPE image
 
-See `boot/proxy-dhcp/README.md` — this is the one piece that has to run on
-your local network rather than in the cloud.
+See `boot/winpe/README.md` — build the signed WinPE image once, deliver it
+via WDS (network boot) or a bootable USB stick. This is the one piece that
+has to happen on your own machine/network rather than in the cloud. (Using
+the older iPXE path instead? See `boot/proxy-dhcp/README.md` — note its
+custom `ipxe.efi` won't run with Secure Boot enabled.)
 
 ## Using it
 
-Two ways to trigger a deployment:
+Boot the machine from the WinPE image (network boot via WDS, or the USB
+stick). `Deploy.ps1` prompts for technician credentials, then either an OS
+profile and post-imaging action (domain join / install an app / leave at
+OOBE for Autopilot) if nothing's pre-staged, or picks up a job already
+queued from the admin UI. It applies the image, and at first logon the
+generalized `PostAction.ps1` runs whichever action was chosen.
 
-- **Self-service (typical)**: PXE-boot the machine (or reboot it with network
-  boot as the first boot option). It chains through your local proxyDHCP ->
-  iPXE -> `https://<worker>/boot/<mac>`, which prompts the technician for
-  their username/password (iPXE's native credential prompt on a 401,
-  cached for the rest of the session), then shows a menu of OS profiles.
-  Picking one creates the job, installs unattended, and — for Windows — asks
-  at first logon whether to join the domain.
-- **Pre-staged (optional)**: open the admin UI, enter a target machine's MAC
-  address, pick a profile, click "Queue reinstall" ahead of time. The
-  technician still has to authenticate at the PXE prompt, but the menu is
-  skipped since a job is already waiting.
+Pre-staging (optional): open the admin UI, enter a target machine's MAC
+address, pick a profile, click "Queue reinstall" ahead of time — the
+technician still authenticates at boot, but skips the prompts for whatever
+was already decided.
 
 Either way, watch the job flip from `pending` -> `booted` -> `complete` in
-the UI, along with which technician triggered it.
+the UI, along with which technician triggered it and which post-action ran.
 
 ## Security
 

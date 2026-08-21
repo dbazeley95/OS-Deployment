@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import type { Bindings, DeploymentJob } from "../types";
-import { createJob, getPendingJobForMac, updateJobStatus } from "../lib/db";
+import type { Bindings } from "../types";
+import { getPendingJobForMac, resolveOrCreateJob, updateJobStatus } from "../lib/db";
 import { getProfile, listProfiles } from "../lib/profiles";
 import { buildBootScript, buildMenuScript, idleBootScript } from "../lib/ipxe";
 import { requireTechnician } from "../lib/auth";
@@ -58,12 +58,7 @@ bootRoute.get("/:mac/install", async (c) => {
     return c.text(idleBootScript(`Unknown OS profile: ${profileId}`), 200, IPXE_HEADERS);
   }
 
-  let job = await getPendingJobForMac(c.env.DB, mac);
-  if (!job || job.os_profile !== profile.id) {
-    const id = await createJob(c.env.DB, mac, profile.id, { technician });
-    job = { id } as DeploymentJob; // only the id is used below
-  }
-  await updateJobStatus(c.env.DB, job.id, "booted", `selected by ${technician}`, technician);
+  await resolveOrCreateJob(c.env.DB, mac, profile.id, { technician, log: `selected by ${technician}` });
 
   const origin = new URL(c.req.url).origin;
   return c.text(buildBootScript(profile, origin), 200, IPXE_HEADERS);

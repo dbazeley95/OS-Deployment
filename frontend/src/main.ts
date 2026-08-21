@@ -31,12 +31,13 @@ async function loadJobs() {
             <td class="mac">${j.device_mac}</td>
             <td>${j.os_profile}</td>
             <td><span class="badge badge-${j.status}">${j.status}</span></td>
+            <td>${j.post_action ? j.post_action + (j.app_id ? ` (${j.app_id})` : "") : "—"}</td>
             <td>${j.technician ?? "—"}</td>
             <td>${j.updated_at}</td>
           </tr>`
         )
         .join("")
-    : emptyRow(6, "No jobs yet.");
+    : emptyRow(7, "No jobs yet.");
 }
 
 async function loadDevices() {

@@ -41,6 +41,27 @@ function parseBasicAuth(header: string | null): { username: string; password: st
 const UNAUTHORIZED_HEADERS = { "WWW-Authenticate": 'Basic realm="OS Deployment", charset="UTF-8"' };
 
 /**
+ * Verifies a username/password pair against the technicians table.
+ * Shared by the iPXE-facing Basic Auth check below and the JSON
+ * deploy API (worker/src/routes/deploy.ts), which takes credentials from
+ * a request body instead of an Authorization header.
+ */
+export async function verifyTechnicianCredentials(
+  db: Bindings["DB"],
+  pepper: string,
+  username: string,
+  password: string
+): Promise<boolean> {
+  const row = await db
+    .prepare(`SELECT password_hash, salt FROM technicians WHERE username = ?1`)
+    .bind(username)
+    .first<{ password_hash: string; salt: string }>();
+  if (!row) return false;
+  const computed = await hashTechnicianPassword(pepper, row.salt, password);
+  return timingSafeEqual(computed, row.password_hash);
+}
+
+/**
  * Verifies HTTP Basic Auth against the technicians table. iPXE natively
  * prompts for credentials on a 401 and caches them per-host for the rest of
  * the boot session, so a technician is only prompted once even across
@@ -58,15 +79,8 @@ export async function requireTechnician(
   if (!creds) {
     return new Response("Technician credentials required", { status: 401, headers: UNAUTHORIZED_HEADERS });
   }
-  const row = await db
-    .prepare(`SELECT password_hash, salt FROM technicians WHERE username = ?1`)
-    .bind(creds.username)
-    .first<{ password_hash: string; salt: string }>();
-  if (!row) {
-    return new Response("Invalid technician credentials", { status: 401, headers: UNAUTHORIZED_HEADERS });
-  }
-  const computed = await hashTechnicianPassword(pepper, row.salt, creds.password);
-  if (!timingSafeEqual(computed, row.password_hash)) {
+  const valid = await verifyTechnicianCredentials(db, pepper, creds.username, creds.password);
+  if (!valid) {
     return new Response("Invalid technician credentials", { status: 401, headers: UNAUTHORIZED_HEADERS });
   }
   return creds.username;

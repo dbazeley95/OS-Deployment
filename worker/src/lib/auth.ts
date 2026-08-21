@@ -38,7 +38,7 @@ function parseBasicAuth(header: string | null): { username: string; password: st
   return { username: decoded.slice(0, idx), password: decoded.slice(idx + 1) };
 }
 
-const UNAUTHORIZED_HEADERS = { "WWW-Authenticate": 'Basic realm="OS Deployment", charset="UTF-8"' };
+const UNAUTHORIZED_HEADERS = { "WWW-Authenticate": 'Basic realm="W.I.P.E", charset="UTF-8"' };
 
 /**
  * Verifies a username/password pair against the technicians table.

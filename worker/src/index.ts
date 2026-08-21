@@ -27,7 +27,7 @@ app.use("/api/devices/*", requireSession);
 app.use("/api/jobs/*", requireSession);
 app.use("/api/catalog/*", requireSession);
 
-app.get("/", (c) => c.text("os-deployment-worker: see /api/devices, /api/jobs, /boot/:mac"));
+app.get("/", (c) => c.text("W.I.P.E API: see /api/devices, /api/jobs, /boot/:mac"));
 
 app.route("/boot", bootRoute);
 app.route("/images", imagesRoute);

@@ -65,7 +65,22 @@ Push to `main` and GitHub Actions deploys the Worker and Pages site (see
 `CLOUDFLARE_ACCOUNT_ID`, and repo variable `WORKER_API_BASE` (your deployed
 Worker's URL) for the Pages build to point at the right API.
 
-### 5. On-prem PXE proxy
+### 5. Custom domains
+
+Live at **osd.xcet.uk** (admin UI) and **api.osd.xcet.uk** (Worker API), on a
+zone already hosted on Cloudflare:
+
+- **Worker**: handled entirely by `worker/wrangler.toml`'s `[[routes]]` entry
+  (`custom_domain = true`) — Cloudflare provisions the DNS record and TLS
+  cert automatically on the next `wrangler deploy`, no dashboard step needed.
+- **Pages**: has no equivalent config-file option. One-time manual step:
+  Cloudflare dashboard → Workers & Pages → `os-deployment` project → **Custom
+  domains** → add `osd.xcet.uk`.
+- Once the Worker's custom domain is live, set the `WORKER_API_BASE` repo
+  variable to `https://api.osd.xcet.uk` and re-run the Pages deploy so the
+  admin UI is built pointing at it.
+
+### 6. On-prem PXE proxy
 
 See `boot/proxy-dhcp/README.md` — this is the one piece that has to run on
 your local network rather than in the cloud.

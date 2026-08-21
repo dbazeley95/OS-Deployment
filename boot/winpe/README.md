@@ -1,10 +1,9 @@
 # WinPE deployment image (replaces MDT)
 
-This is the primary recommended deployment path for Windows machines with
-Secure Boot enabled — it replaces MDT's Lite Touch wizard with a real
-Windows Forms GUI (`DeployGui.ps1`, not VBScript/HTA), and never puts an
-unsigned binary in the boot chain, so it doesn't hit the Secure Boot
-problems the iPXE-based paths (`../proxy-dhcp/`) ran into.
+This is the deployment path for Windows machines with Secure Boot
+enabled — it replaces MDT's Lite Touch wizard with a real Windows Forms
+GUI (`DeployGui.ps1`, not VBScript/HTA), and never puts an unsigned
+binary in the boot chain, so it works cleanly under UEFI Secure Boot.
 
 Build the image **once**. It can then be delivered either via WDS (network
 boot) or a bootable USB stick — same image, no difference to what runs
@@ -90,13 +89,11 @@ script update pushed since the machine booted.
 ### Via WDS
 
 Add `C:\WinPE_amd64\media\sources\boot.wim` as a normal **Boot Image**
-through the WDS console's standard "Add Boot Image" wizard — this is a
-real WIM-based boot image, so the wizard that was the wrong tool for the
-earlier raw-`ipxe.efi` attempt is exactly right here. Set it as the default
-boot image for network boot, or leave multiple boot images available and
-let the F12 menu choose. No NBP/`BootProgram`/`N12BootProgram` changes are
-needed for this — if those were changed during earlier troubleshooting,
-revert them to WDS's defaults.
+through the WDS console's standard "Add Boot Image" wizard — it's a real
+WIM-based boot image, so that wizard is exactly the right tool. Set it as
+the default boot image for network boot, or leave multiple boot images
+available and let the F12 menu choose. No NBP/`BootProgram`/`N12BootProgram`
+changes are needed for this — WDS's defaults are fine.
 
 ### Via bootable USB
 

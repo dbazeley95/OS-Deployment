@@ -490,6 +490,18 @@
         padding-top: 1rem;
       }
 
+      .release-notes-list {
+        margin: 0.75rem 0 0;
+        padding-left: 1.25rem;
+        font-size: 0.875rem;
+        max-height: 50vh;
+        overflow-y: auto;
+      }
+
+      .release-notes-list li {
+        margin-bottom: 0.5rem;
+      }
+
       .wizard-nav button[type="button"]:not(#ts-next-btn) {
         background: var(--bg);
         color: var(--text);
@@ -501,7 +513,7 @@
     <main>
       <header>
         <div>
-          <h1 title="Windows Installation Provisioning Engine">W.I.P.E <span id="version-badge" class="version-badge" title="Build version"></span></h1>
+          <h1 title="Windows Installation Provisioning Engine">W.I.P.E <button type="button" id="version-badge" class="version-badge" title="Click for release notes"></button></h1>
           <p>Windows Installation Provisioning Engine - deployment catalog editor and job log, reinstalls are always started on-device.</p>
         </div>
         <button id="logout-btn" type="button" hidden>Log out</button>
@@ -741,6 +753,15 @@
       </section>
       </div>
       </div>
+
+      <dialog id="release-notes-dialog">
+        <h2>Release notes</h2>
+        <p class="hint" id="release-notes-version"></p>
+        <ul class="release-notes-list" id="release-notes-list"></ul>
+        <div class="wizard-nav">
+          <button type="button" id="release-notes-close">Close</button>
+        </div>
+      </dialog>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

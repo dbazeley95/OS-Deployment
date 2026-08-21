@@ -10,11 +10,38 @@ import {
 } from "./api";
 import { findWindowsWimInIso } from "./iso";
 
-const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
+const versionBadge = document.querySelector<HTMLButtonElement>("#version-badge")!;
+const releaseNotesDialog = document.querySelector<HTMLDialogElement>("#release-notes-dialog")!;
+const releaseNotesVersion = document.querySelector<HTMLElement>("#release-notes-version")!;
+const releaseNotesList = document.querySelector<HTMLUListElement>("#release-notes-list")!;
+const releaseNotesCloseBtn = document.querySelector<HTMLButtonElement>("#release-notes-close")!;
+
 const appVersion = import.meta.env.VITE_APP_VERSION;
 const commitSha = import.meta.env.VITE_COMMIT_SHA;
 versionBadge.textContent = appVersion || "dev";
-versionBadge.title = commitSha ? `Build ${commitSha}` : "Local dev build";
+versionBadge.title = "Click for release notes";
+
+// Baked in at build time (see .github/workflows/deploy-pages.yml) as the
+// subjects of the most recent commits to main - since every PR ships as one
+// descriptively-titled squash commit, those subjects double as a changelog.
+const releaseNotes: string[] = (() => {
+  try {
+    return JSON.parse(import.meta.env.VITE_RELEASE_NOTES ?? "[]");
+  } catch {
+    return [];
+  }
+})();
+
+versionBadge.addEventListener("click", () => {
+  releaseNotesVersion.textContent = appVersion
+    ? `Build ${appVersion}${commitSha ? ` (${commitSha.slice(0, 7)})` : ""}`
+    : "Local dev build";
+  releaseNotesList.innerHTML = releaseNotes.length
+    ? releaseNotes.map((note) => `<li>${note}</li>`).join("")
+    : '<li class="empty">No release notes available.</li>';
+  releaseNotesDialog.showModal();
+});
+releaseNotesCloseBtn.addEventListener("click", () => releaseNotesDialog.close());
 
 const errorEl = document.querySelector<HTMLElement>("#error")!;
 const loginCard = document.querySelector<HTMLElement>("#login-card")!;

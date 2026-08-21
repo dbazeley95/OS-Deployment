@@ -31,12 +31,18 @@ jobs:
           day_start="$(date -u +%Y-%m-%d)T00:00:00Z"
           count="$(git log --since="$day_start" --oneline | wc -l)"
           echo "version=${date}.${count}" >> "$GITHUB_OUTPUT"
+      - name: Compute release notes (recent commit subjects, newest first)
+        id: notes
+        run: |
+          notes="$(git log --format=%s -15 | jq -R . | jq -s -c .)"
+          echo "notes=${notes}" >> "$GITHUB_OUTPUT"
       - name: Build
         run: npm run build
         env:
           VITE_API_BASE: ${{ vars.WORKER_API_BASE }}
           VITE_APP_VERSION: ${{ steps.version.outputs.version }}
           VITE_COMMIT_SHA: ${{ github.sha }}
+          VITE_RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
       - name: Ensure Pages project exists
         uses: cloudflare/wrangler-action@v3
         continue-on-error: true # fails harmlessly once the project already exists

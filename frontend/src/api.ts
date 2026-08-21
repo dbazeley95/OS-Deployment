@@ -120,10 +120,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ key }),
     }),
-  uploadPart: async (uploadId: string, key: string, partNumber: number, chunk: Blob): Promise<{ partNumber: number; etag: string }> => {
+  uploadPart: async (
+    uploadId: string,
+    key: string,
+    partNumber: number,
+    chunk: Blob,
+    signal?: AbortSignal
+  ): Promise<{ partNumber: number; etag: string }> => {
     const res = await fetch(
       `${API_BASE}/api/catalog/uploads/${encodeURIComponent(uploadId)}/parts/${partNumber}?key=${encodeURIComponent(key)}`,
-      { method: "PUT", credentials: "include", body: chunk }
+      { method: "PUT", credentials: "include", body: chunk, signal }
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

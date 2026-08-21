@@ -436,10 +436,86 @@ const WIM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 // multiplexes these over one connection, so this isn't fighting the
 // browser's old per-origin connection cap.
 const WIM_UPLOAD_CONCURRENCY = 6;
+// A part that hasn't finished in this long is presumed stalled (a dropped
+// connection sitting silently, not a timeout error) and gets aborted+retried
+// rather than left to hang forever. Generous on purpose - an 8MB part at a
+// genuinely slow-but-working ~1 Mbps still finishes in a bit over a minute.
+const PART_TIMEOUT_MS = 90_000;
+const PART_MAX_ATTEMPTS = 4;
 
 interface UploadSource {
   size: number;
   slice(start: number, end: number): Blob;
+}
+
+type UploadedPart = { partNumber: number; etag: string };
+
+interface StoredUploadProgress {
+  uploadId: string;
+  key: string;
+  size: number;
+  parts: UploadedPart[];
+}
+
+function uploadProgressStorageKey(key: string): string {
+  return `wipe:upload-progress:${key}`;
+}
+
+// Resumability is a nice-to-have on top of a working upload, not a
+// requirement of it - localStorage can fail (quota, private browsing), and
+// none of that should ever break the upload itself, just the ability to
+// resume it later.
+function loadStoredUploadProgress(key: string, size: number): StoredUploadProgress | null {
+  try {
+    const raw = localStorage.getItem(uploadProgressStorageKey(key));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredUploadProgress;
+    return parsed.key === key && parsed.size === size ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveUploadProgress(progress: StoredUploadProgress) {
+  try {
+    localStorage.setItem(uploadProgressStorageKey(progress.key), JSON.stringify(progress));
+  } catch {
+    /* resuming later just won't be possible - the upload itself is unaffected */
+  }
+}
+
+function clearUploadProgress(key: string) {
+  try {
+    localStorage.removeItem(uploadProgressStorageKey(key));
+  } catch {
+    /* nothing to do - it'll just look like stale progress next time */
+  }
+}
+
+async function uploadPartWithRetry(
+  uploadId: string,
+  key: string,
+  partNumber: number,
+  chunk: Blob,
+  onStalled: (attempt: number) => void
+): Promise<UploadedPart> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= PART_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PART_TIMEOUT_MS);
+    try {
+      return await api.uploadPart(uploadId, key, partNumber, chunk, controller.signal);
+    } catch (err) {
+      lastError = err;
+      if (attempt < PART_MAX_ATTEMPTS) {
+        onStalled(attempt);
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError;
 }
 
 async function uploadPartsConcurrently(
@@ -447,11 +523,14 @@ async function uploadPartsConcurrently(
   key: string,
   totalChunks: number,
   source: UploadSource,
-  onProgress: (completed: number) => void
-): Promise<{ partNumber: number; etag: string }[]> {
-  const parts: { partNumber: number; etag: string }[] = new Array(totalChunks);
+  alreadyUploaded: UploadedPart[],
+  onProgress: (parts: UploadedPart[]) => void
+): Promise<UploadedPart[]> {
+  const parts: (UploadedPart | undefined)[] = new Array(totalChunks);
+  for (const part of alreadyUploaded) parts[part.partNumber - 1] = part;
+  const snapshot = () => parts.filter((p): p is UploadedPart => Boolean(p));
+
   let nextIndex = 0;
-  let completed = 0;
   let stopped = false;
   let firstError: unknown;
 
@@ -459,11 +538,13 @@ async function uploadPartsConcurrently(
     while (!stopped) {
       const i = nextIndex++;
       if (i >= totalChunks) return;
+      if (parts[i]) continue; // already uploaded in an earlier attempt at this same upload
       try {
         const chunk = source.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
-        parts[i] = await api.uploadPart(uploadId, key, i + 1, chunk);
-        completed++;
-        onProgress(completed);
+        parts[i] = await uploadPartWithRetry(uploadId, key, i + 1, chunk, () => {
+          profileWimProgressText.textContent = `Part ${i + 1} stalled, retrying... (${snapshot().length}/${totalChunks} done)`;
+        });
+        onProgress(snapshot());
       } catch (err) {
         stopped = true;
         firstError = err;
@@ -475,7 +556,7 @@ async function uploadPartsConcurrently(
   const workerCount = Math.min(WIM_UPLOAD_CONCURRENCY, totalChunks);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   if (firstError) throw firstError;
-  return parts;
+  return snapshot();
 }
 
 // Shared by both "upload a WIM directly" and "extract from an ISO" - the
@@ -491,22 +572,33 @@ async function uploadWimSource(key: string, source: UploadSource, inputsToDisabl
   profileWimProgressText.textContent = "Starting upload...";
 
   const totalChunks = Math.ceil(source.size / WIM_UPLOAD_CHUNK_BYTES);
-  let uploadId: string | undefined;
   try {
-    const created = await api.createUpload(key);
-    uploadId = created.uploadId;
-    const parts = await uploadPartsConcurrently(uploadId, key, totalChunks, source, (completed) => {
-      const percent = Math.round((completed / totalChunks) * 100);
+    const resumable = loadStoredUploadProgress(key, source.size);
+    const uploadId = resumable ? resumable.uploadId : (await api.createUpload(key)).uploadId;
+    const alreadyUploaded = resumable?.parts ?? [];
+    if (resumable) {
+      profileWimProgressText.textContent = `Resuming upload (${alreadyUploaded.length}/${totalChunks} parts already done)...`;
+    }
+
+    const parts = await uploadPartsConcurrently(uploadId, key, totalChunks, source, alreadyUploaded, (done) => {
+      saveUploadProgress({ uploadId, key, size: source.size, parts: done });
+      const percent = Math.round((done.length / totalChunks) * 100);
       profileWimProgressBar.value = percent;
-      profileWimProgressText.textContent = `Uploading... ${percent}% (${completed}/${totalChunks})`;
+      profileWimProgressText.textContent = `Uploading... ${percent}% (${done.length}/${totalChunks})`;
     });
     await api.completeUpload(uploadId, key, parts);
+    clearUploadProgress(key);
     profileInstallWimInput.value = key;
     profileWimProgressText.textContent = "Upload complete.";
   } catch (err) {
-    if (uploadId) await api.abortUpload(uploadId, key).catch(() => {});
+    // Deliberately not aborting the R2-side multipart upload here - parts
+    // already uploaded stay valid, and the saved progress above lets
+    // re-selecting the same file resume from where this left off instead of
+    // starting a multi-GB upload over from scratch.
     profileWimProgress.hidden = true;
-    showError(err);
+    showError(
+      new Error(`${err instanceof Error ? err.message : String(err)} - re-select the same file to resume where it left off.`)
+    );
   } finally {
     for (const input of inputsToDisable) input.disabled = false;
     profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;

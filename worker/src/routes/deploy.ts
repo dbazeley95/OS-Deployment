@@ -47,11 +47,13 @@ async function deploymentPayload(
     imageIndex: profile.imageIndex,
     answerFileUrl: imageUrl(origin, profile.answerFile),
     postActionScriptUrl: imageUrl(origin, "winpe/PostAction.ps1"),
-    steps: sequence.steps.map((app) => ({
-      label: app.label,
-      installKind: app.installKind,
-      appUrl: imageUrl(origin, app.r2Key),
-    })),
+    // "app" steps carry a downloadable installer URL; "builtin" steps are a
+    // fixed action PostAction.ps1 already knows how to run by id (no file).
+    steps: sequence.steps.map((step) =>
+      step.kind === "app"
+        ? { kind: "app" as const, label: step.label, installKind: step.installKind, appUrl: imageUrl(origin, step.r2Key!) }
+        : { kind: "builtin" as const, label: step.label, actionId: step.id }
+    ),
   };
 }
 

@@ -42,11 +42,23 @@ export interface AppEntry {
   installKind: InstallKind;
 }
 
+export type TaskSequenceStepKind = "app" | "builtin";
+
+export interface TaskSequenceStep {
+  kind: TaskSequenceStepKind;
+  id: string;
+}
+
 export interface TaskSequence {
   id: string;
   label: string;
   osProfileId: string;
-  stepIds: string[];
+  steps: TaskSequenceStep[];
+}
+
+export interface BuiltinAction {
+  id: string;
+  label: string;
 }
 
 class ApiError extends Error {
@@ -108,6 +120,8 @@ export const api = {
     request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(app) }),
   deleteCatalogApp: (id: string) =>
     request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  listCatalogBuiltinActions: () => request<BuiltinAction[]>("/api/catalog/builtin-actions"),
 
   listCatalogTaskSequences: () => request<TaskSequence[]>("/api/catalog/task-sequences"),
   createCatalogTaskSequence: (sequence: TaskSequence) =>

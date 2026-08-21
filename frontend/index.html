@@ -387,6 +387,78 @@
       .history-row table {
         margin-top: 0.4rem;
       }
+
+      dialog {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 1.5rem;
+        width: min(520px, 92vw);
+      }
+
+      dialog::backdrop {
+        background: rgba(16, 20, 28, 0.5);
+      }
+
+      dialog h2 {
+        font-size: 1.05rem;
+        margin: 0 0 0.15rem;
+      }
+
+      dialog #ts-wizard-step-label {
+        margin: 0 0 1.1rem;
+      }
+
+      .wizard-step {
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        margin-bottom: 1rem;
+      }
+
+      .wizard-step[hidden] {
+        display: none;
+      }
+
+      .wizard-step .field {
+        width: 100%;
+      }
+
+      .wizard-step select,
+      .wizard-step input {
+        width: 100%;
+      }
+
+      #ts-review dl {
+        margin: 0;
+        font-size: 0.9rem;
+      }
+
+      #ts-review dt {
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-top: 0.6rem;
+      }
+
+      #ts-review dd {
+        margin: 0.15rem 0 0;
+      }
+
+      .wizard-nav {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      .wizard-nav button[type="button"]:not(#ts-next-btn) {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
     </style>
   </head>
   <body>
@@ -543,30 +615,8 @@
       <div class="tab-panel" data-tab-panel="task-sequences" hidden>
       <section class="card">
         <h2>Task sequences</h2>
-        <p class="hint">Bundles an OS profile with an ordered list of apps to install - what the WinPE wizard offers.</p>
-        <form id="task-sequence-form">
-          <div class="field">
-            <label for="ts-id">ID</label>
-            <input id="ts-id" name="id" placeholder="win11-pro-sales" required />
-          </div>
-          <div class="field">
-            <label for="ts-label">Label</label>
-            <input id="ts-label" name="label" placeholder="Windows 11 Pro - Sales laptop" required />
-          </div>
-          <div class="field">
-            <label for="ts-profile-select">OS profile</label>
-            <select id="ts-profile-select" name="osProfileId"></select>
-          </div>
-          <div class="field">
-            <label for="ts-step-select">Step to add</label>
-            <select id="ts-step-select"></select>
-          </div>
-          <button type="button" id="ts-add-step">Add step</button>
-          <button type="submit" id="ts-submit">Add task sequence</button>
-          <button type="button" id="ts-cancel" hidden>Cancel</button>
-        </form>
-        <p class="hint" id="ts-no-apps-hint" hidden>No apps yet - add one in the Apps tab first, then come back to build a step list.</p>
-        <ol id="ts-steps-list" class="steps-list"></ol>
+        <p class="hint">Bundles an OS profile with an ordered list of steps to run - what the WinPE wizard offers.</p>
+        <button type="button" id="ts-new-btn">New task sequence</button>
         <table>
           <thead>
             <tr><th>ID</th><th>Label</th><th>OS profile</th><th>Steps</th><th></th></tr>
@@ -574,6 +624,49 @@
           <tbody id="task-sequences-body"></tbody>
         </table>
       </section>
+
+      <dialog id="ts-wizard">
+        <form id="task-sequence-form">
+          <h2 id="ts-wizard-title">New task sequence</h2>
+          <p class="hint" id="ts-wizard-step-label">Step 1 of 3 - Basics</p>
+
+          <div class="wizard-step" data-wizard-step="1">
+            <div class="field">
+              <label for="ts-id">ID</label>
+              <input id="ts-id" name="id" placeholder="win11-pro-sales" required />
+            </div>
+            <div class="field">
+              <label for="ts-label">Label</label>
+              <input id="ts-label" name="label" placeholder="Windows 11 Pro - Sales laptop" required />
+            </div>
+            <div class="field">
+              <label for="ts-profile-select">OS profile</label>
+              <select id="ts-profile-select" name="osProfileId" required></select>
+            </div>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="2" hidden>
+            <p class="hint" id="ts-no-apps-hint" hidden>No custom apps yet - add one in the Apps tab. Built-in actions are always available below.</p>
+            <div class="field">
+              <label for="ts-step-select">Step to add</label>
+              <select id="ts-step-select"></select>
+            </div>
+            <button type="button" id="ts-add-step">Add step</button>
+            <ol id="ts-steps-list" class="steps-list"></ol>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="3" hidden>
+            <div id="ts-review"></div>
+          </div>
+
+          <div class="wizard-nav">
+            <button type="button" id="ts-back-btn" hidden>Back</button>
+            <button type="button" id="ts-next-btn">Next</button>
+            <button type="submit" id="ts-submit" hidden>Save task sequence</button>
+            <button type="button" id="ts-cancel">Cancel</button>
+          </div>
+        </form>
+      </dialog>
       </div>
 
       <div class="tab-panel" data-tab-panel="drivers" hidden>

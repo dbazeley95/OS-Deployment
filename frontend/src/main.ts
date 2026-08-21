@@ -1,4 +1,13 @@
-import { api, ApiError, type AppEntry, type DeploymentJob, type OsProfile, type TaskSequence } from "./api";
+import {
+  api,
+  ApiError,
+  type AppEntry,
+  type BuiltinAction,
+  type DeploymentJob,
+  type OsProfile,
+  type TaskSequence,
+  type TaskSequenceStep,
+} from "./api";
 
 const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
 const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -37,21 +46,36 @@ const appSubmitBtn = document.querySelector<HTMLButtonElement>("#app-submit")!;
 const appCancelBtn = document.querySelector<HTMLButtonElement>("#app-cancel")!;
 
 const taskSequencesBody = document.querySelector<HTMLElement>("#task-sequences-body")!;
+const tsNewBtn = document.querySelector<HTMLButtonElement>("#ts-new-btn")!;
+const tsWizard = document.querySelector<HTMLDialogElement>("#ts-wizard")!;
+const tsWizardTitle = document.querySelector<HTMLElement>("#ts-wizard-title")!;
+const tsWizardStepLabel = document.querySelector<HTMLElement>("#ts-wizard-step-label")!;
+const tsWizardSteps = Array.from(tsWizard.querySelectorAll<HTMLElement>(".wizard-step"));
 const taskSequenceForm = document.querySelector<HTMLFormElement>("#task-sequence-form")!;
 const tsIdInput = document.querySelector<HTMLInputElement>("#ts-id")!;
+const tsLabelInput = document.querySelector<HTMLInputElement>("#ts-label")!;
 const tsProfileSelect = document.querySelector<HTMLSelectElement>("#ts-profile-select")!;
 const tsStepSelect = document.querySelector<HTMLSelectElement>("#ts-step-select")!;
 const tsAddStepBtn = document.querySelector<HTMLButtonElement>("#ts-add-step")!;
 const tsStepsList = document.querySelector<HTMLOListElement>("#ts-steps-list")!;
+const tsReview = document.querySelector<HTMLElement>("#ts-review")!;
+const tsBackBtn = document.querySelector<HTMLButtonElement>("#ts-back-btn")!;
+const tsNextBtn = document.querySelector<HTMLButtonElement>("#ts-next-btn")!;
 const tsSubmitBtn = document.querySelector<HTMLButtonElement>("#ts-submit")!;
 const tsCancelBtn = document.querySelector<HTMLButtonElement>("#ts-cancel")!;
 
 let editingProfileId: string | null = null;
 let editingAppId: string | null = null;
 let editingTaskSequenceId: string | null = null;
-let currentSteps: string[] = [];
-let stepAppLabels: Record<string, string> = {};
+let currentSteps: TaskSequenceStep[] = [];
+let stepLabels: Record<string, string> = {};
+let wizardStep = 1;
+const WIZARD_STEP_COUNT = 3;
 const expandedDeviceMacs = new Set<string>();
+
+function stepKey(step: TaskSequenceStep): string {
+  return `${step.kind}:${step.id}`;
+}
 
 function showError(err: unknown) {
   errorEl.textContent = err instanceof Error ? err.message : String(err);
@@ -192,19 +216,26 @@ async function loadTsProfileOptions() {
 }
 
 async function loadTsStepOptions() {
-  const apps = await api.listCatalogApps();
-  stepAppLabels = Object.fromEntries(apps.map((a) => [a.id, a.label]));
-  tsStepSelect.innerHTML = apps.map((a) => `<option value="${a.id}">${a.label}</option>`).join("");
+  const [apps, builtins] = await Promise.all([api.listCatalogApps(), api.listCatalogBuiltinActions()]);
+  stepLabels = {
+    ...Object.fromEntries(apps.map((a) => [`app:${a.id}`, a.label])),
+    ...Object.fromEntries(builtins.map((b) => [`builtin:${b.id}`, b.label])),
+  };
+  const appOptions = apps.map((a) => `<option value="app:${a.id}">${a.label}</option>`).join("");
+  const builtinOptions = builtins.map((b) => `<option value="builtin:${b.id}">${b.label}</option>`).join("");
+  tsStepSelect.innerHTML = `
+    <optgroup label="Apps">${appOptions || "<option disabled>No apps yet</option>"}</optgroup>
+    <optgroup label="Built-in actions">${builtinOptions}</optgroup>
+  `;
   tsNoAppsHint.hidden = apps.length > 0;
-  tsAddStepBtn.disabled = apps.length === 0;
 }
 
 function renderStepsList() {
   tsStepsList.innerHTML = currentSteps.length
     ? currentSteps
         .map(
-          (appId, i) => `<li>
-            <span>${stepAppLabels[appId] ?? appId}</span>
+          (step, i) => `<li>
+            <span>${stepLabels[stepKey(step)] ?? step.id}</span>
             <button type="button" data-step-up="${i}" ${i === 0 ? "disabled" : ""}>&uarr;</button>
             <button type="button" data-step-down="${i}" ${i === currentSteps.length - 1 ? "disabled" : ""}>&darr;</button>
             <button type="button" class="danger" data-step-remove="${i}">Remove</button>
@@ -215,13 +246,18 @@ function renderStepsList() {
 }
 
 async function loadTaskSequencesTable() {
-  const [sequences, profiles, apps] = await Promise.all([
+  const [sequences, profiles, apps, builtins] = await Promise.all([
     api.listCatalogTaskSequences(),
     api.listCatalogProfiles(),
     api.listCatalogApps(),
+    api.listCatalogBuiltinActions(),
   ]);
   const profileLabel = (id: string) => profiles.find((p) => p.id === id)?.label ?? id;
-  const stepLabels = (ids: string[]) => ids.map((id) => apps.find((a) => a.id === id)?.label ?? id).join(", ") || "—";
+  const stepLabel = (step: TaskSequenceStep) =>
+    step.kind === "app"
+      ? (apps.find((a) => a.id === step.id)?.label ?? step.id)
+      : (builtins.find((b) => b.id === step.id)?.label ?? step.id);
+  const stepsSummary = (steps: TaskSequenceStep[]) => steps.map(stepLabel).join(", ") || "—";
   taskSequencesBody.innerHTML = sequences.length
     ? sequences
         .map(
@@ -229,7 +265,7 @@ async function loadTaskSequencesTable() {
             <td class="mono">${s.id}</td>
             <td>${s.label}</td>
             <td>${profileLabel(s.osProfileId)}</td>
-            <td>${stepLabels(s.stepIds)}</td>
+            <td>${stepsSummary(s.steps)}</td>
             <td class="row-actions">
               <button type="button" data-edit-ts="${s.id}">Edit</button>
               <button type="button" class="danger" data-delete-ts="${s.id}">Delete</button>
@@ -272,14 +308,50 @@ function resetAppForm() {
   appCancelBtn.hidden = true;
 }
 
-function resetTaskSequenceForm() {
-  editingTaskSequenceId = null;
+function renderWizardReview() {
+  const profileLabel = tsProfileSelect.selectedOptions[0]?.textContent ?? tsProfileSelect.value;
+  const stepsHtml = currentSteps.length
+    ? `<ol>${currentSteps.map((s) => `<li>${stepLabels[stepKey(s)] ?? s.id}</li>`).join("")}</ol>`
+    : `<p class="empty">No steps - just applies the OS image.</p>`;
+  tsReview.innerHTML = `
+    <dl>
+      <dt>ID</dt><dd class="mono">${tsIdInput.value}</dd>
+      <dt>Label</dt><dd>${tsLabelInput.value}</dd>
+      <dt>OS profile</dt><dd>${profileLabel}</dd>
+      <dt>Steps</dt><dd>${stepsHtml}</dd>
+    </dl>
+  `;
+}
+
+function showWizardStep(step: number) {
+  wizardStep = step;
+  for (const el of tsWizardSteps) {
+    el.hidden = Number(el.dataset.wizardStep) !== step;
+  }
+  tsWizardStepLabel.textContent = `Step ${step} of ${WIZARD_STEP_COUNT} - ${["Basics", "Steps", "Review"][step - 1]}`;
+  tsBackBtn.hidden = step === 1;
+  tsNextBtn.hidden = step === WIZARD_STEP_COUNT;
+  tsSubmitBtn.hidden = step !== WIZARD_STEP_COUNT;
+  if (step === WIZARD_STEP_COUNT) renderWizardReview();
+}
+
+function openTaskSequenceWizard(sequence?: TaskSequence) {
   taskSequenceForm.reset();
-  tsIdInput.disabled = false;
-  currentSteps = [];
+  editingTaskSequenceId = sequence?.id ?? null;
+  tsIdInput.disabled = Boolean(sequence);
+  tsWizardTitle.textContent = sequence ? "Edit task sequence" : "New task sequence";
+  tsSubmitBtn.textContent = sequence ? "Save task sequence" : "Add task sequence";
+  if (sequence) {
+    tsIdInput.value = sequence.id;
+    tsLabelInput.value = sequence.label;
+    tsProfileSelect.value = sequence.osProfileId;
+    currentSteps = [...sequence.steps];
+  } else {
+    currentSteps = [];
+  }
   renderStepsList();
-  tsSubmitBtn.textContent = "Add task sequence";
-  tsCancelBtn.hidden = true;
+  showWizardStep(1);
+  tsWizard.showModal();
 }
 
 profileForm.addEventListener("submit", async (e) => {
@@ -390,7 +462,8 @@ appsBody.addEventListener("click", async (e) => {
 
 tsAddStepBtn.addEventListener("click", () => {
   if (!tsStepSelect.value) return;
-  currentSteps.push(tsStepSelect.value);
+  const [kind, id] = tsStepSelect.value.split(/:(.*)/s) as [TaskSequenceStep["kind"], string];
+  currentSteps.push({ kind, id });
   renderStepsList();
 });
 
@@ -413,15 +486,33 @@ tsStepsList.addEventListener("click", (e) => {
   renderStepsList();
 });
 
+tsNewBtn.addEventListener("click", async () => {
+  errorEl.textContent = "";
+  await loadTsProfileOptions();
+  await loadTsStepOptions();
+  openTaskSequenceWizard();
+});
+
+tsNextBtn.addEventListener("click", () => {
+  if (wizardStep === 1 && !taskSequenceForm.checkValidity()) {
+    taskSequenceForm.reportValidity();
+    return;
+  }
+  showWizardStep(wizardStep + 1);
+});
+
+tsBackBtn.addEventListener("click", () => showWizardStep(wizardStep - 1));
+
+tsCancelBtn.addEventListener("click", () => tsWizard.close());
+
 taskSequenceForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorEl.textContent = "";
-  const data = new FormData(taskSequenceForm);
   const sequence: TaskSequence = {
-    id: String(data.get("id")),
-    label: String(data.get("label")),
-    osProfileId: String(data.get("osProfileId")),
-    stepIds: [...currentSteps],
+    id: tsIdInput.value,
+    label: tsLabelInput.value,
+    osProfileId: tsProfileSelect.value,
+    steps: [...currentSteps],
   };
   try {
     if (editingTaskSequenceId) {
@@ -429,14 +520,12 @@ taskSequenceForm.addEventListener("submit", async (e) => {
     } else {
       await api.createCatalogTaskSequence(sequence);
     }
-    resetTaskSequenceForm();
+    tsWizard.close();
     await refresh();
   } catch (err) {
     showError(err);
   }
 });
-
-tsCancelBtn.addEventListener("click", resetTaskSequenceForm);
 
 taskSequencesBody.addEventListener("click", async (e) => {
   const target = e.target as HTMLElement;
@@ -446,16 +535,9 @@ taskSequencesBody.addEventListener("click", async (e) => {
     const sequences = await api.listCatalogTaskSequences();
     const sequence = sequences.find((s) => s.id === editId);
     if (!sequence) return;
-    await loadTsStepOptions(); // ensure stepAppLabels is populated before rendering
-    editingTaskSequenceId = sequence.id;
-    tsIdInput.value = sequence.id;
-    tsIdInput.disabled = true;
-    (taskSequenceForm.elements.namedItem("label") as HTMLInputElement).value = sequence.label;
-    tsProfileSelect.value = sequence.osProfileId;
-    currentSteps = [...sequence.stepIds];
-    renderStepsList();
-    tsSubmitBtn.textContent = "Save task sequence";
-    tsCancelBtn.hidden = false;
+    await loadTsProfileOptions();
+    await loadTsStepOptions(); // ensure stepLabels is populated before rendering
+    openTaskSequenceWizard(sequence);
   } else if (deleteId) {
     if (!confirm(`Delete task sequence "${deleteId}"?`)) return;
     try {

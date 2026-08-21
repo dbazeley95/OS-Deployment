@@ -1,24 +1,42 @@
 import type { Bindings } from "../types";
 import { AppEntry, getApp } from "./apps";
+import { BuiltinAction, getBuiltinAction } from "./builtinActions";
 
 /**
- * A task sequence bundles one OS profile with an ordered list of apps
- * (steps) to install after imaging - the cloud-editable "what to deploy"
- * unit the WinPE wizard picks from, matching MDT's task sequence concept.
- * Backed by the `task_sequences` D1 table (migrations/0006_task_sequences.sql)
- * and managed via the admin UI's catalog editor (worker/src/routes/catalog.ts).
+ * A task sequence bundles one OS profile with an ordered list of steps to
+ * run after imaging - the cloud-editable "what to deploy" unit the WinPE
+ * wizard picks from, matching MDT's task sequence concept. Backed by the
+ * `task_sequences` D1 table (migrations/0006_task_sequences.sql) and
+ * managed via the admin UI's catalog editor (worker/src/routes/catalog.ts).
+ *
+ * A step is either an `app` (installer/script from the `apps` catalog) or
+ * a `builtin` (a fixed, code-defined action like "Install Windows Updates"
+ * - see builtinActions.ts) - no R2 file needed for those.
  */
+export type TaskSequenceStepKind = "app" | "builtin";
+
+export interface TaskSequenceStep {
+  kind: TaskSequenceStepKind;
+  id: string;
+}
+
 export interface TaskSequence {
   id: string;
   label: string;
   osProfileId: string;
-  /** App ids from the `apps` catalog, in install order. */
-  stepIds: string[];
+  steps: TaskSequenceStep[];
 }
 
-export interface ResolvedTaskSequence extends TaskSequence {
-  /** Steps resolved to full app entries, in order. Missing/deleted apps are skipped. */
-  steps: AppEntry[];
+export interface ResolvedTaskSequenceStep extends TaskSequenceStep {
+  label: string;
+  /** Only present for kind="app". */
+  r2Key?: string;
+  installKind?: AppEntry["installKind"];
+}
+
+export interface ResolvedTaskSequence extends Omit<TaskSequence, "steps"> {
+  /** Steps resolved to full details, in order. Missing/deleted apps or unknown builtin ids are skipped. */
+  steps: ResolvedTaskSequenceStep[];
 }
 
 interface TaskSequenceRow {
@@ -28,22 +46,31 @@ interface TaskSequenceRow {
   steps_json: string;
 }
 
+function isStep(x: unknown): x is TaskSequenceStep {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    ((x as TaskSequenceStep).kind === "app" || (x as TaskSequenceStep).kind === "builtin") &&
+    typeof (x as TaskSequenceStep).id === "string"
+  );
+}
+
 function rowToTaskSequence(row: TaskSequenceRow): TaskSequence {
-  let stepIds: string[] = [];
+  let steps: TaskSequenceStep[] = [];
   try {
     const parsed = JSON.parse(row.steps_json);
-    if (Array.isArray(parsed)) stepIds = parsed.filter((x): x is string => typeof x === "string");
+    if (Array.isArray(parsed)) steps = parsed.filter(isStep);
   } catch {
-    stepIds = [];
+    steps = [];
   }
-  return { id: row.id, label: row.label, osProfileId: row.os_profile_id, stepIds };
+  return { id: row.id, label: row.label, osProfileId: row.os_profile_id, steps };
 }
 
 export interface TaskSequenceInput {
   id: string;
   label: string;
   osProfileId: string;
-  stepIds: string[];
+  steps: TaskSequenceStep[];
 }
 
 export async function listTaskSequences(db: Bindings["DB"]): Promise<TaskSequence[]> {
@@ -59,10 +86,15 @@ export async function getTaskSequence(db: Bindings["DB"], id: string): Promise<T
 export async function resolveTaskSequence(db: Bindings["DB"], id: string): Promise<ResolvedTaskSequence | null> {
   const sequence = await getTaskSequence(db, id);
   if (!sequence) return null;
-  const steps: AppEntry[] = [];
-  for (const appId of sequence.stepIds) {
-    const app = await getApp(db, appId);
-    if (app) steps.push(app);
+  const steps: ResolvedTaskSequenceStep[] = [];
+  for (const step of sequence.steps) {
+    if (step.kind === "app") {
+      const app = await getApp(db, step.id);
+      if (app) steps.push({ kind: "app", id: app.id, label: app.label, r2Key: app.r2Key, installKind: app.installKind });
+    } else {
+      const action: BuiltinAction | null = getBuiltinAction(step.id);
+      if (action) steps.push({ kind: "builtin", id: action.id, label: action.label });
+    }
   }
   return { ...sequence, steps };
 }
@@ -70,7 +102,7 @@ export async function resolveTaskSequence(db: Bindings["DB"], id: string): Promi
 export async function createTaskSequence(db: Bindings["DB"], input: TaskSequenceInput): Promise<void> {
   await db
     .prepare(`INSERT INTO task_sequences (id, label, os_profile_id, steps_json) VALUES (?1, ?2, ?3, ?4)`)
-    .bind(input.id, input.label, input.osProfileId, JSON.stringify(input.stepIds))
+    .bind(input.id, input.label, input.osProfileId, JSON.stringify(input.steps))
     .run();
 }
 
@@ -80,7 +112,7 @@ export async function updateTaskSequence(db: Bindings["DB"], id: string, input: 
       `UPDATE task_sequences SET label = ?2, os_profile_id = ?3, steps_json = ?4, updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, input.label, input.osProfileId, JSON.stringify(input.stepIds))
+    .bind(id, input.label, input.osProfileId, JSON.stringify(input.steps))
     .run();
   return meta.changes > 0;
 }

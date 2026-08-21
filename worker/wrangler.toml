@@ -2,6 +2,12 @@ name = "os-deployment-worker"
 main = "src/index.ts"
 compatibility_date = "2024-09-25"
 
+# Requires osd.xcet.uk already on Cloudflare as a zone (it is) - Cloudflare
+# provisions the DNS record and TLS cert for this automatically on deploy.
+[[routes]]
+pattern = "api.osd.xcet.uk"
+custom_domain = true
+
 # Create with: wrangler d1 create os-deployment
 # Then paste the returned database_id below.
 [[d1_databases]]
@@ -15,5 +21,5 @@ binding = "IMAGES"
 bucket_name = "os-deployment-images"
 
 [vars]
-# Comma-separated list of allowed origins for the admin UI (Cloudflare Pages URL).
-ALLOWED_ORIGIN = "*"
+# Origin of the admin UI, for CORS on /api/*.
+ALLOWED_ORIGIN = "https://osd.xcet.uk"

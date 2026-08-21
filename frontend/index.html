@@ -66,7 +66,7 @@
       }
 
       main {
-        max-width: 880px;
+        max-width: min(1400px, 94vw);
         margin: 0 auto;
       }
 
@@ -302,6 +302,91 @@
         justify-content: space-between;
         gap: 1rem;
       }
+
+      .tabs {
+        display: flex;
+        gap: 0.25rem;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1.5rem;
+        overflow-x: auto;
+      }
+
+      .tab-btn {
+        background: transparent;
+        color: var(--text-muted);
+        border: none;
+        border-radius: 0;
+        font-weight: 600;
+        padding: 0.7rem 1rem;
+        white-space: nowrap;
+        border-bottom: 2px solid transparent;
+      }
+
+      .tab-btn:hover {
+        filter: none;
+        color: var(--text);
+      }
+
+      .tab-btn[aria-selected="true"] {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+
+      .tab-btn:disabled {
+        color: var(--text-muted);
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      .stat-row {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+      }
+
+      .stat-tile {
+        flex: 1 1 160px;
+        border-radius: var(--radius);
+        padding: 1rem 1.25rem;
+      }
+
+      .stat-tile-value {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .stat-tile-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-top: 0.2rem;
+      }
+
+      .stat-tile-progress {
+        background: var(--status-booted-bg);
+        color: var(--status-booted-text);
+      }
+
+      .stat-tile-complete {
+        background: var(--status-complete-bg);
+        color: var(--status-complete-text);
+      }
+
+      .stat-tile-failed {
+        background: var(--status-failed-bg);
+        color: var(--status-failed-text);
+      }
+
+      .history-row td {
+        background: var(--bg);
+        padding: 0.75rem 0.6rem 1rem;
+      }
+
+      .history-row table {
+        margin-top: 0.4rem;
+      }
     </style>
   </head>
   <body>
@@ -332,8 +417,32 @@
       </section>
 
       <div id="app" hidden>
+      <nav class="tabs" id="tabs" role="tablist">
+        <button type="button" class="tab-btn" data-tab="dashboard" role="tab">Dashboard</button>
+        <button type="button" class="tab-btn" data-tab="devices" role="tab">Devices</button>
+        <button type="button" class="tab-btn" data-tab="profiles" role="tab">OS Profiles</button>
+        <button type="button" class="tab-btn" data-tab="apps" role="tab">Apps</button>
+        <button type="button" class="tab-btn" data-tab="task-sequences" role="tab">Task Sequences</button>
+        <button type="button" class="tab-btn" data-tab="drivers" role="tab">Drivers</button>
+      </nav>
+
+      <div class="tab-panel" data-tab-panel="dashboard">
       <section class="card">
-        <h2>Jobs</h2>
+        <h2>Dashboard</h2>
+        <div class="stat-row">
+          <div class="stat-tile stat-tile-progress">
+            <div class="stat-tile-value" id="stat-in-progress">0</div>
+            <div class="stat-tile-label">In progress</div>
+          </div>
+          <div class="stat-tile stat-tile-complete">
+            <div class="stat-tile-value" id="stat-complete">0</div>
+            <div class="stat-tile-label">Complete</div>
+          </div>
+          <div class="stat-tile stat-tile-failed">
+            <div class="stat-tile-value" id="stat-failed">0</div>
+            <div class="stat-tile-label">Failed</div>
+          </div>
+        </div>
         <p class="hint">Deployments are always started on-device (the WinPE wizard) - this is a log, not a scheduler.</p>
         <table>
           <thead>
@@ -342,17 +451,22 @@
           <tbody id="jobs-body"></tbody>
         </table>
       </section>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="devices" hidden>
       <section class="card">
         <h2>Devices</h2>
+        <p class="hint">Each device's full job history is one click away.</p>
         <table>
           <thead>
-            <tr><th>MAC</th><th>Hostname</th><th>Serial</th><th>Last seen</th></tr>
+            <tr><th>MAC</th><th>Hostname</th><th>Serial</th><th>Last seen</th><th></th></tr>
           </thead>
           <tbody id="devices-body"></tbody>
         </table>
       </section>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="profiles" hidden>
       <section class="card">
         <h2>OS profiles</h2>
         <p class="hint">The catalog the WinPE deployment GUI offers. Edit here - no code change or redeploy needed.</p>
@@ -387,7 +501,9 @@
           <tbody id="profiles-body"></tbody>
         </table>
       </section>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="apps" hidden>
       <section class="card">
         <h2>Apps</h2>
         <p class="hint">Installers/scripts usable as task sequence steps.</p>
@@ -422,7 +538,9 @@
           <tbody id="apps-body"></tbody>
         </table>
       </section>
+      </div>
 
+      <div class="tab-panel" data-tab-panel="task-sequences" hidden>
       <section class="card">
         <h2>Task sequences</h2>
         <p class="hint">Bundles an OS profile with an ordered list of apps to install - what the WinPE wizard offers.</p>
@@ -447,6 +565,7 @@
           <button type="submit" id="ts-submit">Add task sequence</button>
           <button type="button" id="ts-cancel" hidden>Cancel</button>
         </form>
+        <p class="hint" id="ts-no-apps-hint" hidden>No apps yet - add one in the Apps tab first, then come back to build a step list.</p>
         <ol id="ts-steps-list" class="steps-list"></ol>
         <table>
           <thead>
@@ -455,6 +574,14 @@
           <tbody id="task-sequences-body"></tbody>
         </table>
       </section>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="drivers" hidden>
+      <section class="card">
+        <h2>Drivers</h2>
+        <p class="hint">Coming soon - inject out-of-box drivers into the deployment for hardware Windows doesn't cover itself.</p>
+      </section>
+      </div>
       </div>
     </main>
 

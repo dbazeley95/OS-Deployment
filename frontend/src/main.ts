@@ -1,4 +1,4 @@
-import { api, ApiError, type AppEntry, type OsProfile, type TaskSequence } from "./api";
+import { api, ApiError, type AppEntry, type DeploymentJob, type OsProfile, type TaskSequence } from "./api";
 
 const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
 const appVersion = import.meta.env.VITE_APP_VERSION;
@@ -12,8 +12,17 @@ const appEl = document.querySelector<HTMLElement>("#app")!;
 const logoutBtn = document.querySelector<HTMLButtonElement>("#logout-btn")!;
 const loginForm = document.querySelector<HTMLFormElement>("#login-form")!;
 
+const tabsNav = document.querySelector<HTMLElement>("#tabs")!;
+const tabButtons = Array.from(tabsNav.querySelectorAll<HTMLButtonElement>(".tab-btn"));
+const tabPanels = Array.from(document.querySelectorAll<HTMLElement>(".tab-panel"));
+
+const statInProgress = document.querySelector<HTMLElement>("#stat-in-progress")!;
+const statComplete = document.querySelector<HTMLElement>("#stat-complete")!;
+const statFailed = document.querySelector<HTMLElement>("#stat-failed")!;
+
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body")!;
 const devicesBody = document.querySelector<HTMLElement>("#devices-body")!;
+const tsNoAppsHint = document.querySelector<HTMLElement>("#ts-no-apps-hint")!;
 
 const profilesBody = document.querySelector<HTMLElement>("#profiles-body")!;
 const profileForm = document.querySelector<HTMLFormElement>("#profile-form")!;
@@ -42,50 +51,99 @@ let editingAppId: string | null = null;
 let editingTaskSequenceId: string | null = null;
 let currentSteps: string[] = [];
 let stepAppLabels: Record<string, string> = {};
+const expandedDeviceMacs = new Set<string>();
 
 function showError(err: unknown) {
   errorEl.textContent = err instanceof Error ? err.message : String(err);
 }
 
+function selectTab(tab: string) {
+  for (const btn of tabButtons) {
+    btn.setAttribute("aria-selected", String(btn.dataset.tab === tab));
+  }
+  for (const panel of tabPanels) {
+    panel.hidden = panel.dataset.tabPanel !== tab;
+  }
+}
+
+tabsNav.addEventListener("click", (e) => {
+  const tab = (e.target as HTMLElement).closest<HTMLButtonElement>(".tab-btn")?.dataset.tab;
+  if (tab) selectTab(tab);
+});
+
+selectTab("dashboard");
+
 function emptyRow(colspan: number, message: string): string {
   return `<tr><td colspan="${colspan}" class="empty">${message}</td></tr>`;
+}
+
+function jobRow(j: DeploymentJob, labelFor: (id: string | null) => string, includeMac = true): string {
+  return `<tr>
+    <td>${j.id}</td>
+    ${includeMac ? `<td class="mac">${j.device_mac}</td>` : ""}
+    <td>${labelFor(j.task_sequence_id)}</td>
+    <td><span class="badge badge-${j.status}">${j.status}</span></td>
+    <td>${j.domain_join ? `Yes${j.domain ? ` [${j.domain}]` : ""}` : "No"}</td>
+    <td>${j.technician ?? "—"}</td>
+    <td>${j.updated_at}</td>
+  </tr>`;
 }
 
 async function loadJobs() {
   const [jobs, sequences] = await Promise.all([api.listJobs(), api.listCatalogTaskSequences()]);
   const labelFor = (id: string | null) => sequences.find((s) => s.id === id)?.label ?? id ?? "—";
-  jobsBody.innerHTML = jobs.length
-    ? jobs
-        .map(
-          (j) => `<tr>
-            <td>${j.id}</td>
-            <td class="mac">${j.device_mac}</td>
-            <td>${labelFor(j.task_sequence_id)}</td>
-            <td><span class="badge badge-${j.status}">${j.status}</span></td>
-            <td>${j.domain_join ? `Yes${j.domain ? ` [${j.domain}]` : ""}` : "No"}</td>
-            <td>${j.technician ?? "—"}</td>
-            <td>${j.updated_at}</td>
-          </tr>`
-        )
-        .join("")
-    : emptyRow(7, "No jobs yet.");
+
+  const inProgress = jobs.filter((j) => j.status === "pending" || j.status === "booted" || j.status === "installing");
+  statInProgress.textContent = String(inProgress.length);
+  statComplete.textContent = String(jobs.filter((j) => j.status === "complete").length);
+  statFailed.textContent = String(jobs.filter((j) => j.status === "failed").length);
+
+  jobsBody.innerHTML = jobs.length ? jobs.map((j) => jobRow(j, labelFor)).join("") : emptyRow(7, "No jobs yet.");
 }
 
 async function loadDevices() {
-  const devices = await api.listDevices();
+  const [devices, jobs, sequences] = await Promise.all([
+    api.listDevices(),
+    api.listJobs(),
+    api.listCatalogTaskSequences(),
+  ]);
+  const labelFor = (id: string | null) => sequences.find((s) => s.id === id)?.label ?? id ?? "—";
+
   devicesBody.innerHTML = devices.length
     ? devices
-        .map(
-          (d) => `<tr>
+        .map((d) => {
+          const history = jobs.filter((j) => j.device_mac === d.mac);
+          const expanded = expandedDeviceMacs.has(d.mac);
+          const row = `<tr>
             <td class="mac">${d.mac}</td>
             <td>${d.hostname ?? "—"}</td>
             <td class="mono">${d.serial_number ?? "—"}</td>
             <td>${d.last_seen_at ?? "—"}</td>
-          </tr>`
-        )
+            <td><button type="button" data-toggle-history="${d.mac}">${expanded ? "Hide" : "View"} history (${history.length})</button></td>
+          </tr>`;
+          if (!expanded) return row;
+          const historyTable = history.length
+            ? `<table>
+                <thead><tr><th>ID</th><th>Task sequence</th><th>Status</th><th>Domain join</th><th>Technician</th><th>Updated</th></tr></thead>
+                <tbody>${history.map((j) => jobRow(j, labelFor, false)).join("")}</tbody>
+              </table>`
+            : `<p class="empty">No jobs recorded for this device yet.</p>`;
+          return `${row}<tr class="history-row"><td colspan="5">${historyTable}</td></tr>`;
+        })
         .join("")
-    : emptyRow(4, "No devices yet.");
+    : emptyRow(5, "No devices yet.");
 }
+
+devicesBody.addEventListener("click", (e) => {
+  const mac = (e.target as HTMLElement).dataset.toggleHistory;
+  if (!mac) return;
+  if (expandedDeviceMacs.has(mac)) {
+    expandedDeviceMacs.delete(mac);
+  } else {
+    expandedDeviceMacs.add(mac);
+  }
+  loadDevices().catch(showError);
+});
 
 async function loadProfilesTable() {
   const profiles = await api.listCatalogProfiles();
@@ -137,6 +195,8 @@ async function loadTsStepOptions() {
   const apps = await api.listCatalogApps();
   stepAppLabels = Object.fromEntries(apps.map((a) => [a.id, a.label]));
   tsStepSelect.innerHTML = apps.map((a) => `<option value="${a.id}">${a.label}</option>`).join("");
+  tsNoAppsHint.hidden = apps.length > 0;
+  tsAddStepBtn.disabled = apps.length === 0;
 }
 
 function renderStepsList() {

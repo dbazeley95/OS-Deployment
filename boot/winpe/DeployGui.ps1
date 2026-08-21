@@ -91,46 +91,24 @@ function Show-LoginForm {
     return @{ Username = $textUser.Text; Password = $textPass.Text }
 }
 
-# --- Step 2: profile / post-action / app selection -----------------------
-# Shown only for whatever the /auth response didn't already pre-stage.
+# --- Step 2: hostname / domain-join / task sequence selection ------------
+# Hostname and task sequence are skipped (shown read-only) if a job was
+# already pre-staged via the admin UI (status "ready"). Domain-join is
+# always confirmed fresh here regardless - the join credentials are never
+# known to the cloud, so there's nothing to pre-stage for them anyway.
 
 function Show-SelectionForm {
     param($AuthResponse)
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "OS Deployment - Options"
-    $form.Size = New-Object System.Drawing.Size(420, 320)
+    $form.Size = New-Object System.Drawing.Size(460, 420)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
 
+    $isPreStaged = $AuthResponse.status -eq "ready"
     $y = 15
-    $comboProfile = $null
-    if ($AuthResponse.status -eq "choose") {
-        $labelProfile = New-Object System.Windows.Forms.Label
-        $labelProfile.Text = "OS profile"
-        $labelProfile.Location = New-Object System.Drawing.Point(20, $y)
-        $labelProfile.AutoSize = $true
-        $form.Controls.Add($labelProfile)
-
-        $comboProfile = New-Object System.Windows.Forms.ComboBox
-        $comboProfile.Location = New-Object System.Drawing.Point(150, ($y - 3))
-        $comboProfile.Width = 220
-        $comboProfile.DropDownStyle = "DropDownList"
-        foreach ($p in $AuthResponse.profiles) {
-            [void]$comboProfile.Items.Add($p.label)
-        }
-        if ($comboProfile.Items.Count -gt 0) { $comboProfile.SelectedIndex = 0 }
-        $form.Controls.Add($comboProfile)
-        $y += 40
-    } else {
-        $labelProfile = New-Object System.Windows.Forms.Label
-        $labelProfile.Text = "Profile already assigned: $($AuthResponse.profile)"
-        $labelProfile.Location = New-Object System.Drawing.Point(20, $y)
-        $labelProfile.AutoSize = $true
-        $form.Controls.Add($labelProfile)
-        $y += 30
-    }
 
     $labelHostname = New-Object System.Windows.Forms.Label
     $labelHostname.Text = "Hostname"
@@ -140,65 +118,102 @@ function Show-SelectionForm {
 
     $textHostname = New-Object System.Windows.Forms.TextBox
     $textHostname.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $textHostname.Width = 220
+    $textHostname.Width = 260
+    if ($isPreStaged -and $AuthResponse.hostname) {
+        $textHostname.Text = $AuthResponse.hostname
+        $textHostname.Enabled = $false
+    }
     $form.Controls.Add($textHostname)
     $y += 35
 
-    $labelAction = New-Object System.Windows.Forms.Label
-    $labelAction.Text = "After Windows installs:"
-    $labelAction.Location = New-Object System.Drawing.Point(20, $y)
-    $labelAction.AutoSize = $true
-    $form.Controls.Add($labelAction)
-    $y += 25
+    $labelTs = New-Object System.Windows.Forms.Label
+    $labelTs.Text = "Task sequence"
+    $labelTs.Location = New-Object System.Drawing.Point(20, $y)
+    $labelTs.AutoSize = $true
+    $form.Controls.Add($labelTs)
 
-    $radioDomain = New-Object System.Windows.Forms.RadioButton
-    $radioDomain.Text = "Domain join"
-    $radioDomain.Location = New-Object System.Drawing.Point(35, $y)
-    $radioDomain.AutoSize = $true
-    $radioDomain.Checked = $true
-    $form.Controls.Add($radioDomain)
+    $comboTs = $null
+    if ($isPreStaged) {
+        $labelTsValue = New-Object System.Windows.Forms.Label
+        $labelTsValue.Text = $AuthResponse.taskSequenceId
+        $labelTsValue.Location = New-Object System.Drawing.Point(150, $y)
+        $labelTsValue.AutoSize = $true
+        $form.Controls.Add($labelTsValue)
+    } else {
+        $comboTs = New-Object System.Windows.Forms.ComboBox
+        $comboTs.Location = New-Object System.Drawing.Point(150, ($y - 3))
+        $comboTs.Width = 260
+        $comboTs.DropDownStyle = "DropDownList"
+        foreach ($s in $AuthResponse.taskSequences) {
+            [void]$comboTs.Items.Add("$($s.label) - $($s.osProfileLabel)")
+        }
+        if ($comboTs.Items.Count -gt 0) { $comboTs.SelectedIndex = 0 }
+        $form.Controls.Add($comboTs)
+    }
+    $y += 35
+
+    $checkDomain = New-Object System.Windows.Forms.CheckBox
+    $checkDomain.Text = "Join a domain"
+    $checkDomain.Location = New-Object System.Drawing.Point(20, $y)
+    $checkDomain.AutoSize = $true
+    $checkDomain.Checked = [bool]$AuthResponse.domainJoin
+    $form.Controls.Add($checkDomain)
+    $y += 30
+
+    $labelDomain = New-Object System.Windows.Forms.Label
+    $labelDomain.Text = "Domain name"
+    $labelDomain.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomain.AutoSize = $true
+    $form.Controls.Add($labelDomain)
 
     $textDomain = New-Object System.Windows.Forms.TextBox
-    $textDomain.Location = New-Object System.Drawing.Point(180, ($y - 3))
-    $textDomain.Width = 190
-    $textDomain.Enabled = $true
+    $textDomain.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $textDomain.Width = 260
+    if ($AuthResponse.domain) { $textDomain.Text = $AuthResponse.domain }
+    $textDomain.Enabled = $checkDomain.Checked
     $form.Controls.Add($textDomain)
-    $y += 28
+    $y += 32
 
-    $radioApp = New-Object System.Windows.Forms.RadioButton
-    $radioApp.Text = "Install an app"
-    $radioApp.Location = New-Object System.Drawing.Point(35, $y)
-    $radioApp.AutoSize = $true
-    $form.Controls.Add($radioApp)
+    $labelDomainUser = New-Object System.Windows.Forms.Label
+    $labelDomainUser.Text = "Domain username"
+    $labelDomainUser.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomainUser.AutoSize = $true
+    $form.Controls.Add($labelDomainUser)
 
-    $comboApp = New-Object System.Windows.Forms.ComboBox
-    $comboApp.Location = New-Object System.Drawing.Point(180, ($y - 3))
-    $comboApp.Width = 190
-    $comboApp.DropDownStyle = "DropDownList"
-    $comboApp.Enabled = $false
-    foreach ($a in $AuthResponse.apps) {
-        [void]$comboApp.Items.Add($a.label)
-    }
-    $form.Controls.Add($comboApp)
-    $y += 28
+    $textDomainUser = New-Object System.Windows.Forms.TextBox
+    $textDomainUser.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $textDomainUser.Width = 260
+    $textDomainUser.Enabled = $checkDomain.Checked
+    $form.Controls.Add($textDomainUser)
+    $y += 32
 
-    $radioAutopilot = New-Object System.Windows.Forms.RadioButton
-    $radioAutopilot.Text = "Leave at OOBE for Autopilot"
-    $radioAutopilot.Location = New-Object System.Drawing.Point(35, $y)
-    $radioAutopilot.AutoSize = $true
-    $form.Controls.Add($radioAutopilot)
+    $labelDomainPass = New-Object System.Windows.Forms.Label
+    $labelDomainPass.Text = "Domain password"
+    $labelDomainPass.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomainPass.AutoSize = $true
+    $form.Controls.Add($labelDomainPass)
+
+    $textDomainPass = New-Object System.Windows.Forms.TextBox
+    $textDomainPass.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $textDomainPass.Width = 260
+    $textDomainPass.UseSystemPasswordChar = $true
+    $textDomainPass.Enabled = $checkDomain.Checked
+    $form.Controls.Add($textDomainPass)
     $y += 40
 
-    $radioApp.Add_CheckedChanged({ $comboApp.Enabled = $radioApp.Checked })
-    $radioDomain.Add_CheckedChanged({ $textDomain.Enabled = $radioDomain.Checked })
+    $checkDomain.Add_CheckedChanged({
+        $textDomain.Enabled = $checkDomain.Checked
+        $textDomainUser.Enabled = $checkDomain.Checked
+        $textDomainPass.Enabled = $checkDomain.Checked
+    })
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Continue"
-    $btnOk.Location = New-Object System.Drawing.Point(280, $y)
+    $btnOk.Location = New-Object System.Drawing.Point(320, $y)
     $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $form.AcceptButton = $btnOk
     $form.Controls.Add($btnOk)
-    $form.Size = New-Object System.Drawing.Size(420, ($y + 90))
+    $form.Size = New-Object System.Drawing.Size(460, ($y + 90))
 
     if ($form.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
         return $null
@@ -208,32 +223,33 @@ function Show-SelectionForm {
         Show-ErrorBox "Enter a hostname for this device."
         return $null
     }
-
-    $postAction = if ($radioApp.Checked) { "install-app" } elseif ($radioAutopilot.Checked) { "autopilot" } else { "domain-join" }
-    $appId = $null
-    if ($postAction -eq "install-app") {
-        if ($comboApp.SelectedIndex -lt 0) {
-            Show-ErrorBox "Pick an app to install."
-            return $null
-        }
-        $appId = $AuthResponse.apps[$comboApp.SelectedIndex].id
+    $taskSequenceId = if ($comboTs) {
+        if ($comboTs.SelectedIndex -lt 0) { Show-ErrorBox "Pick a task sequence."; return $null }
+        $AuthResponse.taskSequences[$comboTs.SelectedIndex].id
+    } else {
+        $AuthResponse.taskSequenceId
     }
     $domain = $null
-    if ($postAction -eq "domain-join") {
-        if ([string]::IsNullOrWhiteSpace($textDomain.Text)) {
-            Show-ErrorBox "Enter the domain to join."
+    $domainUsername = $null
+    $domainPassword = $null
+    if ($checkDomain.Checked) {
+        if ([string]::IsNullOrWhiteSpace($textDomain.Text) -or [string]::IsNullOrWhiteSpace($textDomainUser.Text) -or [string]::IsNullOrWhiteSpace($textDomainPass.Text)) {
+            Show-ErrorBox "Enter the domain name, username, and password to join."
             return $null
         }
         $domain = $textDomain.Text.Trim()
-    }
-    $profileId = if ($comboProfile) {
-        if ($comboProfile.SelectedIndex -lt 0) { Show-ErrorBox "Pick an OS profile."; return $null }
-        $AuthResponse.profiles[$comboProfile.SelectedIndex].id
-    } else {
-        $AuthResponse.profile
+        $domainUsername = $textDomainUser.Text.Trim()
+        $domainPassword = $textDomainPass.Text
     }
 
-    return @{ Profile = $profileId; PostAction = $postAction; AppId = $appId; Hostname = $textHostname.Text.Trim(); Domain = $domain }
+    return @{
+        Hostname = $textHostname.Text.Trim()
+        TaskSequenceId = $taskSequenceId
+        DomainJoin = [bool]$checkDomain.Checked
+        Domain = $domain
+        DomainUsername = $domainUsername
+        DomainPassword = $domainPassword
+    }
 }
 
 # --- Step 3: confirm + deploy, with a live progress log -------------------
@@ -249,7 +265,7 @@ function Show-DeployForm {
     $form.MaximizeBox = $false
 
     $labelSummary = New-Object System.Windows.Forms.Label
-    $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.profile) / $($Deployment.postAction)$(if ($Deployment.appId) { " ($($Deployment.appId))" })$(if ($Deployment.domain) { " [$($Deployment.domain)]" })"
+    $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.taskSequence)$(if ($Deployment.domainJoin) { " [join $($Deployment.domain)]" })"
     $labelSummary.Location = New-Object System.Drawing.Point(20, 15)
     $labelSummary.AutoSize = $true
     $form.Controls.Add($labelSummary)
@@ -313,8 +329,6 @@ assign letter=W
             # The answer file's <ComputerName> ships as the placeholder
             # "WIN-REIMAGED" (see boot/profiles/*/autounattend.xml) - swap it
             # for the technician-entered hostname before writing to disk.
-            # Fall back to a MAC-derived name for jobs pre-staged without one
-            # (the "ready" fast-path never shows this form to ask).
             $computerName = if ($Deployment.hostname) { $Deployment.hostname } else { "WIN-" + ($mac -replace ":", "").Substring(6).ToUpper() }
             $answerFileContent = (Invoke-WebRequest -Uri $Deployment.answerFileUrl -UseBasicParsing).Content
             $answerFileContent = $answerFileContent -replace "WIN-REIMAGED", $computerName
@@ -322,8 +336,18 @@ assign letter=W
 
             New-Item -ItemType Directory -Force -Path "W:\Windows\Setup\Scripts" | Out-Null
             Invoke-WebRequest -Uri $Deployment.postActionScriptUrl -OutFile "W:\Windows\Setup\Scripts\PostAction.ps1"
-            @{ action = $Deployment.postAction; appUrl = $Deployment.appUrl; domain = $Deployment.domain } | ConvertTo-Json |
-                Set-Content -Path "W:\Windows\Setup\Scripts\post-action.json"
+            # domainUsername/domainPassword were collected locally by
+            # Show-SelectionForm and merged onto $Deployment client-side -
+            # they were never sent to the Worker. PostAction.ps1 reads them
+            # from this file at first logon, then scrubs them immediately
+            # after a successful join.
+            @{
+                domainJoin = $Deployment.domainJoin
+                domain = $Deployment.domain
+                domainUsername = $Deployment.domainUsername
+                domainPassword = $Deployment.domainPassword
+                steps = $Deployment.steps
+            } | ConvertTo-Json -Depth 5 | Set-Content -Path "W:\Windows\Setup\Scripts\post-action.json"
             $progressBar.Value = 92
 
             Write-Log "Writing boot files..."
@@ -360,31 +384,34 @@ while ($true) {
         continue
     }
 
-    $deployment = $null
-    switch ($auth.status) {
-        "ready" { $deployment = $auth }
-        { $_ -in "choose-action", "choose" } {
-            $selection = Show-SelectionForm -AuthResponse $auth
-            if (-not $selection) { continue }
-            try {
-                $deployment = Invoke-DeployApi -Path "/api/deploy/select" -Body @{
-                    mac = $mac; username = $creds.Username; password = $creds.Password
-                    profile = $selection.Profile; postAction = $selection.PostAction; appId = $selection.AppId
-                    hostname = $selection.Hostname; domain = $selection.Domain
-                }
-            } catch {
-                Show-ErrorBox "Couldn't save selection: $($_.Exception.Message)"
-                continue
-            }
-        }
-        default {
-            Show-ErrorBox "Unexpected response from the deployment API: $($auth | ConvertTo-Json)"
-            continue
-        }
+    if ($auth.status -ne "ready" -and $auth.status -ne "choose") {
+        Show-ErrorBox "Unexpected response from the deployment API: $($auth | ConvertTo-Json)"
+        continue
     }
 
-    if ($deployment) {
-        Show-DeployForm -Deployment $deployment
+    # Domain-join credentials are never known to the cloud (see deploy.ts),
+    # so this form is always shown, even for a fully pre-staged job - it
+    # just pre-fills/disables whatever was already decided.
+    $selection = Show-SelectionForm -AuthResponse $auth
+    if (-not $selection) { continue }
+
+    try {
+        $deployment = Invoke-DeployApi -Path "/api/deploy/select" -Body @{
+            mac = $mac; username = $creds.Username; password = $creds.Password
+            hostname = $selection.Hostname; taskSequenceId = $selection.TaskSequenceId
+            domainJoin = $selection.DomainJoin; domain = $selection.Domain
+        }
+    } catch {
+        Show-ErrorBox "Couldn't save selection: $($_.Exception.Message)"
+        continue
     }
+
+    # Merge the locally-collected domain credentials back onto the
+    # deployment object - they were deliberately never part of the
+    # /select request body above.
+    $deployment | Add-Member -NotePropertyName domainUsername -NotePropertyValue $selection.DomainUsername -Force
+    $deployment | Add-Member -NotePropertyName domainPassword -NotePropertyValue $selection.DomainPassword -Force
+
+    Show-DeployForm -Deployment $deployment
     break
 }

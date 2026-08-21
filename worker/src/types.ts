@@ -7,8 +7,6 @@ export type Bindings = {
 
 export type JobStatus = "pending" | "booted" | "installing" | "complete" | "failed";
 
-export type PostAction = "domain-join" | "install-app" | "autopilot";
-
 export interface Device {
   id: number;
   mac: string;
@@ -24,8 +22,8 @@ export interface DeploymentJob {
   status: JobStatus;
   log: string | null;
   technician: string | null;
-  post_action: PostAction | null;
-  app_id: string | null;
+  task_sequence_id: string | null;
+  domain_join: number;
   domain: string | null;
   created_at: string;
   updated_at: string;

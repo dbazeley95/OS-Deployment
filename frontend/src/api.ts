@@ -16,8 +16,8 @@ export interface DeploymentJob {
   os_profile: string;
   status: string;
   technician: string | null;
-  post_action: string | null;
-  app_id: string | null;
+  task_sequence_id: string | null;
+  domain_join: number;
   domain: string | null;
   updated_at: string;
 }
@@ -39,6 +39,13 @@ export interface AppEntry {
   label: string;
   r2Key: string;
   installKind: InstallKind;
+}
+
+export interface TaskSequence {
+  id: string;
+  label: string;
+  osProfileId: string;
+  stepIds: string[];
 }
 
 class ApiError extends Error {
@@ -75,10 +82,10 @@ export const api = {
   // Devices / jobs
   listDevices: () => request<Device[]>("/api/devices"),
   listJobs: () => request<DeploymentJob[]>("/api/jobs"),
-  createJob: (mac: string, os_profile: string, hostname?: string) =>
+  createJob: (mac: string, task_sequence_id: string, hostname?: string) =>
     request<{ id: number }>("/api/jobs", {
       method: "POST",
-      body: JSON.stringify({ mac, os_profile, hostname }),
+      body: JSON.stringify({ mac, task_sequence_id, hostname }),
     }),
 
   // Catalog editor ("cloud Deployment Workbench")
@@ -100,4 +107,15 @@ export const api = {
     request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(app) }),
   deleteCatalogApp: (id: string) =>
     request<{ ok: true }>(`/api/catalog/apps/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  listCatalogTaskSequences: () => request<TaskSequence[]>("/api/catalog/task-sequences"),
+  createCatalogTaskSequence: (sequence: TaskSequence) =>
+    request<{ ok: true }>("/api/catalog/task-sequences", { method: "POST", body: JSON.stringify(sequence) }),
+  updateCatalogTaskSequence: (id: string, sequence: TaskSequence) =>
+    request<{ ok: true }>(`/api/catalog/task-sequences/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(sequence),
+    }),
+  deleteCatalogTaskSequence: (id: string) =>
+    request<{ ok: true }>(`/api/catalog/task-sequences/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

@@ -17,22 +17,29 @@ updating the ADK/WinPE version itself.
 
 ## What the GUI asks for
 
-Alongside OS profile and post-imaging action, `DeployGui.ps1` always
-prompts for a **hostname**, and (only for the `domain-join` action) which
-**domain** to join - both entered at boot-selection time rather than typed
-again at first logon:
+`DeployGui.ps1` mirrors MDT Lite Touch's flow: sign in, enter a
+**hostname**, decide **join a domain or not** (and if so, the domain name
+plus admin credentials, right there in the wizard - no first-logon
+prompt), then pick a **task sequence** - a cloud-editable bundle of one OS
+profile plus an ordered list of apps/customizations to install
+(`worker/src/lib/taskSequences.ts`, managed from the admin UI's "Task
+sequences" section). This is the "modern Deployment Workbench" piece:
+adding a Windows edition, an app, or a new bundle of both is a form
+submission, not a code change + redeploy.
 
-- The hostname gets recorded on the device (`devices.hostname` in D1) and
-  substituted into the answer file's `<ComputerName>` placeholder before
-  it's written to disk - see `boot/profiles/*/autounattend.xml`.
-- The domain gets recorded on the job (`deployment_jobs.domain`) and
-  written into `post-action.json`, so `PostAction.ps1` at first logon only
-  has to prompt for join credentials, not the domain name itself.
+If a job was already pre-staged via the admin UI, the hostname and task
+sequence prompts are skipped (shown read-only, pre-filled) - but the
+domain-join section is **always** shown fresh, pre-staged or not. That's
+deliberate: domain admin credentials are never sent to the Worker at all.
+`DeployGui.ps1` collects them locally and writes them straight into
+`post-action.json` on the target disk; only the domain *name* (not the
+username/password) is recorded on the job, for audit. `PostAction.ps1`
+then joins non-interactively at first logon using those local credentials,
+and scrubs them from the file immediately after attempting the join.
 
-Neither is asked again if a job was already fully pre-staged via the admin
-UI (the `status: "ready"` fast-path) - in that case the hostname falls
-back to a MAC-derived default if the admin didn't set one, since there's
-no prompt shown at all on that path.
+The hostname gets recorded on the device (`devices.hostname` in D1) and
+substituted into the answer file's `<ComputerName>` placeholder before
+it's written to disk - see `boot/profiles/*/autounattend.xml`.
 
 ## Build the image (Windows machine with the free Windows ADK + WinPE add-on)
 
@@ -106,8 +113,9 @@ Same bucket, same upload script as everything else in this repo:
 - `windows-11-25h2/sources/install.wim` — the actual Windows image, see
   `../profiles/windows-11-25h2/README.md` for trimming it to size and
   finding the right `imageIndex` per edition.
-- `windows-11-25h2-{pro,edu}/autounattend.xml` — generalized to work for
-  all three post-imaging actions (see that directory's own notes).
+- `windows-11-25h2-{pro,edu}/autounattend.xml` — generalized to work
+  regardless of domain-join choice or task sequence (see that directory's
+  own notes).
 - `winpe/DeployGui.ps1` — **this is the script that actually runs at boot
   time**, fetched fresh every time (not baked into the image). Editing it
   and pushing to `main` is enough — `.github/workflows/sync-winpe-scripts.yml`
@@ -115,17 +123,19 @@ Same bucket, same upload script as everything else in this repo:
   push that touches this directory. No manual `scripts/upload-image.sh`
   step needed for this one file.
 - `winpe/PostAction.ps1` — same auto-sync as above.
-- Any app/script installers for the `install-app` post-action — upload with
+- Any app/script installers usable as task sequence steps — upload with
   `scripts/upload-image.sh` and add an entry via the admin UI's "Apps"
-  section (or `POST /api/catalog/apps`), see the root `README.md`.
+  section (or `POST /api/catalog/apps`), then reference it from a task
+  sequence's step list, see the root `README.md`.
 
 ## The catalog is now cloud-editable
 
-OS profiles and apps used to be static entries in
-`worker/src/lib/profiles.ts`/`apps.ts`. They're now rows in D1, managed
-from the admin UI's "OS profiles" and "Apps" sections (backed by
+OS profiles, apps, and task sequences used to be static entries in
+`worker/src/lib/profiles.ts`/`apps.ts` (task sequences didn't exist as a
+concept at all). They're now rows in D1, managed from the admin UI's "OS
+profiles", "Apps", and "Task sequences" sections (backed by
 `/api/catalog/*`, behind the same technician login as the rest of the
-admin UI) — adding a Windows edition or an app is a form submission, not a
-code change + redeploy. `DeployGui.ps1` always shows whatever's currently
-in that catalog, since it calls the same `/api/deploy/auth` endpoint the
-catalog editor's data flows through.
+admin UI) — adding a Windows edition, an app, or a new bundle of both is a
+form submission, not a code change + redeploy. `DeployGui.ps1` always
+shows whatever's currently in that catalog, since it calls the same
+`/api/deploy/auth` endpoint the catalog editor's data flows through.

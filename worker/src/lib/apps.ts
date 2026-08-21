@@ -1,12 +1,13 @@
 import type { Bindings } from "../types";
 
 /**
- * Catalog of apps/scripts the "install-app" post-imaging action can
- * silently run after Windows finishes installing, backed by the `apps` D1
- * table (see migrations/0004_catalog.sql) and managed via the admin UI's
- * catalog editor (worker/src/routes/catalog.ts). Upload the installer/script
- * itself to R2 with scripts/upload-image.sh, then add an entry pointing at
- * its key.
+ * Catalog of apps/scripts that can be silently installed after Windows
+ * finishes, backed by the `apps` D1 table (see migrations/0004_catalog.sql)
+ * and managed via the admin UI's catalog editor (worker/src/routes/catalog.ts).
+ * Referenced by task sequences (worker/src/lib/taskSequences.ts) as ordered
+ * steps - installKind="script" also covers arbitrary "customizations", so
+ * there's no separate catalog for those. Upload the installer/script itself
+ * to R2 with scripts/upload-image.sh, then add an entry pointing at its key.
  */
 export type InstallKind = "msi" | "exe" | "script";
 

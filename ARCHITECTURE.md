@@ -13,11 +13,14 @@
 > the same Windows answer files (`boot/profiles/`); they only differ in
 > how a bare-metal machine reaches the point of running the OS installer.
 >
-> The deployment catalog (OS profiles, apps) lives in D1 and is managed
-> from the admin UI (`/api/catalog/*`) instead of a code change +
-> redeploy — a "cloud Deployment Workbench" in place of MDT's local one.
-> The admin UI itself now requires a technician login
+> The deployment catalog (OS profiles, apps, and **task sequences** - an OS
+> profile bundled with an ordered list of apps/customizations) lives in D1
+> and is managed from the admin UI (`/api/catalog/*`) instead of a code
+> change + redeploy — a "cloud Deployment Workbench" in place of MDT's
+> local one. The admin UI itself now requires a technician login
 > (`/api/auth/*`), reusing the same `technicians` table as boot-time auth.
+> Domain-join credentials are the one thing that deliberately never reach
+> the cloud at all - see the WinPE flow below.
 
 ## Why hybrid, not pure-cloud
 
@@ -44,12 +47,12 @@ Everything past that first local hop is cloud-hosted, for either path.
 
 | Layer | Where | What |
 |---|---|---|
-| Admin UI | Cloudflare Pages | Log in as a technician; register devices, pick an OS profile, kick off a reinstall, watch job status; manage the OS profile/app catalog |
+| Admin UI | Cloudflare Pages | Log in as a technician; register devices, queue a reinstall by task sequence, watch job status; manage the OS profile/app/task-sequence catalog |
 | Auth API | Cloudflare Workers | `/api/auth/*` — technician login/logout, issues the admin UI's session cookie |
-| Catalog API | Cloudflare Workers | `/api/catalog/*` — CRUD for OS profiles and apps (D1-backed), behind the session login - the "cloud Deployment Workbench" |
-| Deploy API | Cloudflare Workers | `/api/deploy/*` — JSON API the WinPE `DeployGui.ps1` script calls for technician auth, profile/action selection, and image/answer-file URLs |
+| Catalog API | Cloudflare Workers | `/api/catalog/*` — CRUD for OS profiles, apps, and task sequences (D1-backed), behind the session login - the "cloud Deployment Workbench" |
+| Deploy API | Cloudflare Workers | `/api/deploy/*` — JSON API the WinPE `DeployGui.ps1` script calls for technician auth, hostname/domain-join/task-sequence selection, and image/answer-file URLs (never domain-join credentials - those stay device-local) |
 | iPXE boot script generator | Cloudflare Workers | `/boot/:mac` — the older iPXE-facing route, returns a per-machine iPXE script |
-| State | Cloudflare D1 | Device inventory, deployment jobs (including post-imaging action), status/history, technicians, OS profile/app catalog |
+| State | Cloudflare D1 | Device inventory, deployment jobs (task sequence used, domain-join name), status/history, technicians, OS profile/app/task-sequence catalog |
 | Images & answer files | Cloudflare R2 | Windows WIM images, unattend.xml answer files, `DeployGui.ps1`/`PostAction.ps1`, app installers - streamed to WinPE/iPXE over HTTPS |
 | CI/CD | GitHub Actions | Deploy the Worker (`wrangler deploy`) and Pages site on push to main; sync `boot/winpe/*.ps1` to R2 on push |
 | Getting bootable | On-prem | WinPE via WDS/USB (primary), or `dnsmasq` proxyDHCP + iPXE (alternative) |
@@ -58,15 +61,22 @@ Everything past that first local hop is cloud-hosted, for either path.
 
 ### WinPE path (primary)
 
-An admin can pre-stage a job via the UI, or a technician can boot a machine
-cold (WDS or USB) and pick a profile + post-imaging action on the spot via
-a real Windows Forms GUI (`DeployGui.ps1`, fetched fresh from R2 on every
-boot - not baked into the image). Either way, the GUI authenticates
-against the same `technicians` D1 table as the iPXE path below, just over
-a plain JSON API instead of HTTP Basic Auth (a WinPE script doesn't get
-that prompt for free the way iPXE does), and its catalog dropdowns are
-whatever's currently in the D1-backed profile/app catalog (managed via
-the admin UI's own login-gated `/api/catalog/*`, not code).
+An admin can pre-stage a job via the UI (a hostname and a task sequence),
+or a technician can boot a machine cold (WDS or USB) and enter everything
+on the spot via a real Windows Forms GUI (`DeployGui.ps1`, fetched fresh
+from R2 on every boot - not baked into the image). Either way, the GUI
+authenticates against the same `technicians` D1 table as the iPXE path
+below, just over a plain JSON API instead of HTTP Basic Auth (a WinPE
+script doesn't get that prompt for free the way iPXE does), and its
+task-sequence dropdown is whatever's currently in the D1-backed catalog
+(managed via the admin UI's own login-gated `/api/catalog/*`, not code).
+
+Domain-join is the one exception to "whatever was pre-staged is skipped" -
+it's always confirmed fresh in the wizard, pre-staged or not, because the
+join **username/password are never sent to the Worker at all**.
+`DeployGui.ps1` collects them locally and writes them straight into the
+target disk's `post-action.json`; only the domain *name* travels to D1,
+for audit.
 
 ```mermaid
 sequenceDiagram
@@ -83,22 +93,20 @@ sequenceDiagram
     Worker->>D1: verify technician; look up pending job for mac
 
     alt no pre-staged job
-        Worker-->>Target: profile + app catalogs (D1-backed)
-        Target->>Tech: shows profile + post-action form (+ app picker, if install-app)
-        Target->>Worker: POST /api/deploy/select {...}
-        Worker->>D1: create job (status=booted, technician, post_action, app_id)
-    else job pre-staged via admin UI (profile only)
-        Worker-->>Target: status=choose-action, profile
-        Target->>Tech: shows post-action form only
-        Target->>Worker: POST /api/deploy/select {profile, postAction, ...}
-    else job fully pre-staged (profile + post-action)
-        Worker->>D1: mark booted, record confirming technician
+        Worker-->>Target: status=choose, task sequence catalog (D1-backed)
+        Target->>Tech: shows hostname + domain-join + task-sequence form
+    else job pre-staged via admin UI (hostname + task sequence)
+        Worker-->>Target: status=ready, hostname, taskSequenceId
+        Target->>Tech: shows domain-join form only (hostname/task sequence read-only)
     end
+    Tech->>Target: enters domain name + admin credentials, if joining (kept device-local)
+    Target->>Worker: POST /api/deploy/select {mac, hostname, taskSequenceId, domainJoin, domain}
+    Worker->>D1: create/update job (status=booted, technician, task_sequence_id, domain_join, domain)
 
-    Worker-->>Target: installWim/imageIndex/answerFileUrl/postActionScriptUrl URLs
+    Worker-->>Target: installWim/imageIndex/answerFileUrl/postActionScriptUrl + resolved step URLs
     Target->>R2: download install.wim, answer file, PostAction.ps1 (via Worker, unauthenticated)
-    Target->>Target: GUI shows progress: partition/format disk, DISM /Apply-Image, write post-action.json, bcdboot, reboot
-    Target->>Target: first logon runs PostAction.ps1 (domain join / app install / autopilot)
+    Target->>Target: GUI shows progress: partition/format disk, DISM /Apply-Image, substitute hostname into answer file, write post-action.json (incl. local-only domain credentials + steps), bcdboot, reboot
+    Target->>Target: first logon runs PostAction.ps1 - joins the domain non-interactively, scrubs the credential from disk, then runs each task-sequence step in order
     Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=complete} (phone-home)
     Worker->>D1: update job status
 ```
@@ -135,7 +143,7 @@ sequenceDiagram
 
     Worker-->>Target: dynamic iPXE script (kernel/initrd/answerfile URLs)
     Target->>R2: fetch kernel, initrd, answer file (via Worker, unauthenticated)
-    Target->>Target: unattended install runs; first logon prompts for domain join
+    Target->>Target: unattended install runs; no wizard collected a domain or task sequence, so PostAction.ps1 defaults to no domain-join and no steps
     Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=complete} (phone-home)
     Worker->>D1: update job status
 ```
@@ -172,9 +180,16 @@ boot/profiles/     Per-OS unattended-install answer files, shared by both paths
   want network-level restriction on top of this.
 - `/images/*` (WIMs, answer files, `PostAction.ps1`, app installers) is
   intentionally left unauthenticated even after the auth changes above —
-  answer files and scripts here carry no secrets (domain join is
-  interactive, not baked in), so gating downloads wasn't worth the
-  complexity of threading a token through static, pre-uploaded R2 objects.
+  everything served from there is static, pre-uploaded, non-secret content.
+  Domain-join credentials never pass through this route (or through the
+  Worker/D1 at all) - `DeployGui.ps1` writes them directly from the WinPE
+  GUI into a file on the target disk, and `PostAction.ps1` scrubs them
+  from that file immediately after attempting the join. That file
+  (`C:\Windows\Setup\Scripts\post-action.json`) does briefly hold a
+  plaintext credential between imaging and first logon - the same
+  practical tradeoff MDT's own unattend-based domain join has always had -
+  so treat that window (and anyone with access to the target disk during
+  it) accordingly.
 - Technician passwords are salted per-account and HMAC'd with a Worker
   secret pepper (`PASSWORD_PEPPER`) — never stored or compared in plaintext.
   There's no self-service account creation on purpose; provision technicians

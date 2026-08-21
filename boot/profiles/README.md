@@ -24,11 +24,14 @@ self-service account creation - that would be a hole in the same boundary
 that gates OS reinstalls).
 
 If an admin has already queued a job for a MAC via the admin UI, both paths
-serve that job directly (skipping whichever prompts are already decided).
-Otherwise both offer the same D1-backed catalog to choose from - the WinPE
-path's GUI also offers a post-imaging action (domain join / install an
-app / leave at OOBE for Autopilot) and the app catalog, see
-`../winpe/README.md`.
+skip whichever prompts are already decided (hostname, task sequence). The
+WinPE path's GUI always asks to confirm domain-join separately, though,
+regardless of pre-staging - domain credentials are never known to the
+cloud (see `../winpe/README.md`), so there's nothing to silently reuse
+there. Otherwise both offer the same D1-backed catalog to choose from -
+the WinPE path's GUI picks a **task sequence** (an OS profile bundled with
+an ordered list of apps/customizations, see `../winpe/README.md`) rather
+than a bare OS profile.
 
 Adding another Windows edition/version (or reintroducing a Linux profile
 later) means adding a new subdirectory here plus a matching entry via the
@@ -44,10 +47,14 @@ file can't embed its own job id. Instead, post-install scripts phone home by
 that to whichever job is most recent for that MAC
 (`worker/src/lib/db.ts#updateLatestJobStatusForMac`).
 
-If you need answer files templated per-job (e.g. to inject a hostname chosen
-in the admin UI), the natural extension is to add a route like
-`GET /rendered/:profile/:mac` that reads the R2 template, does token
-substitution using that MAC's job row, and returns the result — then point
-`answerFileArg` in `profiles.ts` at that route instead of `/images/...`.
-That's intentionally left out of this starter to keep the initial scaffold
-small.
+## Note on per-job hostname templating
+
+The one per-job value that *does* need to reach the static answer file is
+the hostname (`<ComputerName>` in the `specialize` pass). Rather than a
+server-side templating route, `DeployGui.ps1` (WinPE path only) fetches
+the answer file as text and does a literal string replace of the
+placeholder `WIN-REIMAGED` with the technician-entered hostname before
+writing it to disk - see `../winpe/README.md`. The older iPXE path has no
+such substitution step, so a machine imaged that way keeps the literal
+`WIN-REIMAGED` name (a valid, if generic, computer name) - that's why the
+placeholder itself has to stay a valid name, not an obviously-fake token.

@@ -4,8 +4,9 @@ Windows install media is not redistributable, so this repo only ships
 `autounattend.xml` templates. Pro and Education share one set of boot media
 (kernel, initrd, WIM) — only the per-edition `autounattend.xml` differs, by
 WIM image index. Both editions' first-logon step now runs the generalized
-`../winpe/PostAction.ps1` (domain join / app install / autopilot), not a
-per-edition script — see `../winpe/README.md`.
+`../winpe/PostAction.ps1` (non-interactive domain join, then the task
+sequence's app/customization steps in order), not a per-edition script —
+see `../winpe/README.md`.
 
 The **primary deployment path is now the WinPE flow** in `../winpe/`, which
 downloads `install.wim` directly over HTTPS from within a full PowerShell
@@ -60,8 +61,8 @@ To use these profiles:
 
 Both editions' `FirstLogonCommands` fetch and run the generalized
 `../winpe/PostAction.ps1` — see that directory's `README.md` and
-`PostAction.ps1` itself for the domain-join / install-app / autopilot
-branches. If a job's post-action wasn't already chosen (e.g. this profile
-is reached via the older iPXE path, which has no mechanism to convey a
-choice), it defaults to `domain-join` to match this profile's original
-behavior.
+`PostAction.ps1` itself for the domain-join and task-sequence-step logic.
+If a job's domain-join/task-sequence choice wasn't already made (e.g. this
+profile is reached via the older iPXE path, which has no wizard to convey
+one), it defaults to no domain-join and no steps — a plain, unconfigured
+Windows install.

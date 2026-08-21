@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { Bindings, JobStatus } from "../types";
 import { createJob, listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
-import { getProfile, listProfiles } from "../lib/profiles";
+import { getProfile } from "../lib/profiles";
+import { getTaskSequence, listTaskSequences } from "../lib/taskSequences";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const VALID_STATUSES: JobStatus[] = ["pending", "booted", "installing", "complete", "failed"];
@@ -13,16 +14,27 @@ jobsRoute.get("/", async (c) => {
   return c.json(jobs);
 });
 
+// Admin pre-staging: picks a task sequence (which carries its own OS
+// profile) rather than an OS profile directly - the technician still
+// authenticates at the machine, but skips the task-sequence prompt.
 jobsRoute.post("/", async (c) => {
-  const body = await c.req.json<{ mac?: string; os_profile?: string; hostname?: string }>().catch(() => null);
+  const body = await c.req.json<{ mac?: string; task_sequence_id?: string; hostname?: string }>().catch(() => null);
   if (!body?.mac || !MAC_RE.test(body.mac)) {
     return c.json({ error: "mac is required and must look like aa:bb:cc:dd:ee:ff" }, 400);
   }
-  if (!body.os_profile || !(await getProfile(c.env.DB, body.os_profile))) {
-    const profiles = await listProfiles(c.env.DB);
-    return c.json({ error: `os_profile must be one of: ${profiles.map((p) => p.id).join(", ")}` }, 400);
+  const sequence = body.task_sequence_id ? await getTaskSequence(c.env.DB, body.task_sequence_id) : null;
+  if (!body.task_sequence_id || !sequence) {
+    const sequences = await listTaskSequences(c.env.DB);
+    return c.json({ error: `task_sequence_id must be one of: ${sequences.map((s) => s.id).join(", ")}` }, 400);
   }
-  const id = await createJob(c.env.DB, body.mac.toLowerCase(), body.os_profile, { hostname: body.hostname });
+  const profile = await getProfile(c.env.DB, sequence.osProfileId);
+  if (!profile) {
+    return c.json({ error: `task sequence ${sequence.id} references an unknown OS profile` }, 400);
+  }
+  const id = await createJob(c.env.DB, body.mac.toLowerCase(), profile.id, {
+    hostname: body.hostname,
+    taskSequenceId: sequence.id,
+  });
   return c.json({ id }, 201);
 });
 

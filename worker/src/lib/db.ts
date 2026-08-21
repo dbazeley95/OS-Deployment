@@ -1,4 +1,4 @@
-import type { Bindings, DeploymentJob, Device, JobStatus, PostAction } from "../types";
+import type { Bindings, DeploymentJob, Device, JobStatus } from "../types";
 
 export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string) {
   await db
@@ -27,15 +27,22 @@ export async function createJob(
   db: Bindings["DB"],
   mac: string,
   osProfile: string,
-  opts?: { hostname?: string; technician?: string; postAction?: PostAction; appId?: string; domain?: string }
+  opts?: { hostname?: string; technician?: string; taskSequenceId?: string; domainJoin?: boolean; domain?: string }
 ): Promise<number> {
   await upsertDevice(db, mac, opts?.hostname);
   const { meta } = await db
     .prepare(
-      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, post_action, app_id, domain)
+      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, task_sequence_id, domain_join, domain)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
     )
-    .bind(mac, osProfile, opts?.technician ?? null, opts?.postAction ?? null, opts?.appId ?? null, opts?.domain ?? null)
+    .bind(
+      mac,
+      osProfile,
+      opts?.technician ?? null,
+      opts?.taskSequenceId ?? null,
+      opts?.domainJoin ? 1 : 0,
+      opts?.domain ?? null
+    )
     .run();
   return meta.last_row_id as number;
 }
@@ -88,7 +95,14 @@ export async function resolveOrCreateJob(
   db: Bindings["DB"],
   mac: string,
   profileId: string,
-  opts: { technician: string; log: string; postAction?: PostAction; appId?: string; hostname?: string; domain?: string }
+  opts: {
+    technician: string;
+    log: string;
+    taskSequenceId?: string;
+    domainJoin?: boolean;
+    domain?: string;
+    hostname?: string;
+  }
 ): Promise<number> {
   // hostname may be entered fresh even if a job for this mac already exists
   // (upsertDevice is idempotent), so record it unconditionally.
@@ -100,11 +114,11 @@ export async function resolveOrCreateJob(
       ? existing.id
       : await createJob(db, mac, profileId, {
           technician: opts.technician,
-          postAction: opts.postAction,
-          appId: opts.appId,
+          taskSequenceId: opts.taskSequenceId,
+          domainJoin: opts.domainJoin,
           domain: opts.domain,
         });
-  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.postAction, opts.appId, opts.domain);
+  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.taskSequenceId, opts.domainJoin, opts.domain);
   return id;
 }
 
@@ -114,20 +128,28 @@ export async function updateJobStatus(
   status: JobStatus,
   log?: string,
   technician?: string,
-  postAction?: PostAction,
-  appId?: string,
+  taskSequenceId?: string,
+  domainJoin?: boolean,
   domain?: string
 ): Promise<void> {
   await db
     .prepare(
       `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log),
          technician = COALESCE(?4, technician),
-         post_action = COALESCE(?5, post_action),
-         app_id = COALESCE(?6, app_id),
+         task_sequence_id = COALESCE(?5, task_sequence_id),
+         domain_join = COALESCE(?6, domain_join),
          domain = COALESCE(?7, domain),
          updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, status, log ?? null, technician ?? null, postAction ?? null, appId ?? null, domain ?? null)
+    .bind(
+      id,
+      status,
+      log ?? null,
+      technician ?? null,
+      taskSequenceId ?? null,
+      domainJoin === undefined ? null : domainJoin ? 1 : 0,
+      domain ?? null
+    )
     .run();
 }

@@ -1,18 +1,22 @@
 import { Hono } from "hono";
-import type { Bindings, PostAction } from "../types";
+import type { Bindings } from "../types";
 import { getDevice, getPendingJobForMac, resolveOrCreateJob } from "../lib/db";
-import { getProfile, listProfiles } from "../lib/profiles";
-import { getApp, listApps } from "../lib/apps";
+import { getProfile } from "../lib/profiles";
+import { getTaskSequence, listTaskSequences, resolveTaskSequence } from "../lib/taskSequences";
 import { verifyTechnicianCredentials } from "../lib/auth";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
-const VALID_POST_ACTIONS: PostAction[] = ["domain-join", "install-app", "autopilot"];
 
 /**
  * JSON API for the WinPE deploy GUI (boot/winpe/DeployGui.ps1) - the
  * PowerShell equivalent of the iPXE Basic-Auth-driven /boot/:mac flow in
  * boot.ts, since a WinPE script doesn't get HTTP Basic Auth prompting for
  * free the way iPXE does.
+ *
+ * Domain-join credentials (username/password) are never sent here - only
+ * the domain *name* is. DeployGui.ps1 collects the credentials locally and
+ * writes them straight into the target disk's post-action.json, so a
+ * domain admin credential never touches the Worker/D1 or the wire.
  */
 export const deployRoute = new Hono<{ Bindings: Bindings }>();
 
@@ -24,27 +28,31 @@ async function deploymentPayload(
   db: Bindings["DB"],
   origin: string,
   mac: string,
-  profileId: string,
-  postAction: PostAction,
-  appId?: string | null,
+  taskSequenceId: string,
+  domainJoin: boolean,
   domain?: string | null
 ) {
-  const profile = await getProfile(db, profileId);
+  const sequence = await resolveTaskSequence(db, taskSequenceId);
+  if (!sequence) return null;
+  const profile = await getProfile(db, sequence.osProfileId);
   if (!profile) return null;
-  const app = appId ? await getApp(db, appId) : undefined;
   const device = await getDevice(db, mac);
   return {
     status: "ready" as const,
+    taskSequence: sequence.id,
     profile: profile.id,
-    postAction,
-    appId: app?.id,
+    domainJoin,
+    domain: domainJoin ? (domain ?? null) : undefined,
     hostname: device?.hostname ?? null,
-    domain: postAction === "domain-join" ? (domain ?? null) : undefined,
     installWim: imageUrl(origin, profile.installWim),
     imageIndex: profile.imageIndex,
     answerFileUrl: imageUrl(origin, profile.answerFile),
     postActionScriptUrl: imageUrl(origin, "winpe/PostAction.ps1"),
-    appUrl: app ? imageUrl(origin, app.r2Key) : undefined,
+    steps: sequence.steps.map((app) => ({
+      label: app.label,
+      installKind: app.installKind,
+      appUrl: imageUrl(origin, app.r2Key),
+    })),
   };
 }
 
@@ -62,22 +70,28 @@ deployRoute.post("/auth", async (c) => {
   }
 
   const mac = body.mac.toLowerCase();
-  const origin = new URL(c.req.url).origin;
   const job = await getPendingJobForMac(c.env.DB, mac);
 
-  if (job?.post_action) {
-    const payload = await deploymentPayload(c.env.DB, origin, mac, job.os_profile, job.post_action, job.app_id, job.domain);
-    if (payload) return c.json(payload);
+  if (job?.task_sequence_id) {
+    const device = await getDevice(c.env.DB, mac);
+    return c.json({
+      status: "ready",
+      taskSequenceId: job.task_sequence_id,
+      hostname: device?.hostname ?? null,
+      domainJoin: Boolean(job.domain_join),
+      domain: job.domain,
+    });
   }
-  if (job) {
-    return c.json({ status: "choose-action", profile: job.os_profile, apps: await listApps(c.env.DB) });
-  }
-  const profiles = await listProfiles(c.env.DB);
-  return c.json({
-    status: "choose",
-    profiles: profiles.map((p) => ({ id: p.id, label: p.label })),
-    apps: await listApps(c.env.DB),
-  });
+
+  const sequences = await listTaskSequences(c.env.DB);
+  const withLabels = await Promise.all(
+    sequences.map(async (s) => ({
+      id: s.id,
+      label: s.label,
+      osProfileLabel: (await getProfile(c.env.DB, s.osProfileId))?.label ?? s.osProfileId,
+    }))
+  );
+  return c.json({ status: "choose", taskSequences: withLabels });
 });
 
 deployRoute.post("/select", async (c) => {
@@ -86,10 +100,9 @@ deployRoute.post("/select", async (c) => {
       mac?: string;
       username?: string;
       password?: string;
-      profile?: string;
-      postAction?: string;
-      appId?: string;
       hostname?: string;
+      taskSequenceId?: string;
+      domainJoin?: boolean;
       domain?: string;
     }>()
     .catch(() => null);
@@ -104,36 +117,41 @@ deployRoute.post("/select", async (c) => {
     return c.json({ error: "invalid technician credentials" }, 401);
   }
 
-  if (!body.profile || !(await getProfile(c.env.DB, body.profile))) {
-    const profiles = await listProfiles(c.env.DB);
-    return c.json({ error: `profile must be one of: ${profiles.map((p) => p.id).join(", ")}` }, 400);
-  }
-  if (!body.postAction || !VALID_POST_ACTIONS.includes(body.postAction as PostAction)) {
-    return c.json({ error: `postAction must be one of: ${VALID_POST_ACTIONS.join(", ")}` }, 400);
-  }
-  if (body.postAction === "install-app" && (!body.appId || !(await getApp(c.env.DB, body.appId)))) {
-    const apps = await listApps(c.env.DB);
-    return c.json({ error: `appId must be one of: ${apps.map((a) => a.id).join(", ")}` }, 400);
-  }
   if (!body.hostname?.trim()) {
     return c.json({ error: "hostname is required" }, 400);
   }
-  if (body.postAction === "domain-join" && !body.domain?.trim()) {
-    return c.json({ error: "domain is required for the domain-join post-action" }, 400);
+  if (!body.taskSequenceId || !(await getTaskSequence(c.env.DB, body.taskSequenceId))) {
+    const sequences = await listTaskSequences(c.env.DB);
+    return c.json({ error: `taskSequenceId must be one of: ${sequences.map((s) => s.id).join(", ")}` }, 400);
+  }
+  if (body.domainJoin && !body.domain?.trim()) {
+    return c.json({ error: "domain is required when domainJoin is true" }, 400);
   }
 
   const mac = body.mac.toLowerCase();
-  const postAction = body.postAction as PostAction;
-  await resolveOrCreateJob(c.env.DB, mac, body.profile, {
+  const sequence = await getTaskSequence(c.env.DB, body.taskSequenceId);
+  const profile = await getProfile(c.env.DB, sequence!.osProfileId);
+  if (!profile) {
+    return c.json({ error: `task sequence ${body.taskSequenceId} references an unknown OS profile` }, 400);
+  }
+
+  await resolveOrCreateJob(c.env.DB, mac, profile.id, {
     technician: body.username,
     log: `selected via WinPE by ${body.username}`,
-    postAction,
-    appId: body.appId,
+    taskSequenceId: body.taskSequenceId,
+    domainJoin: Boolean(body.domainJoin),
+    domain: body.domainJoin ? body.domain : undefined,
     hostname: body.hostname,
-    domain: body.domain,
   });
 
   const origin = new URL(c.req.url).origin;
-  const payload = await deploymentPayload(c.env.DB, origin, mac, body.profile, postAction, body.appId, body.domain);
+  const payload = await deploymentPayload(
+    c.env.DB,
+    origin,
+    mac,
+    body.taskSequenceId,
+    Boolean(body.domainJoin),
+    body.domain
+  );
   return c.json(payload);
 });

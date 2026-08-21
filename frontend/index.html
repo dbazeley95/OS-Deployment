@@ -251,6 +251,24 @@
         margin-left: 0.6rem;
       }
 
+      .steps-list {
+        margin: 0.75rem 0 1.25rem;
+        padding-left: 1.5rem;
+        font-size: 0.875rem;
+      }
+
+      .steps-list li {
+        margin-bottom: 0.35rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .steps-list button {
+        padding: 0.1rem 0.45rem;
+        font-size: 0.72rem;
+      }
+
       .hint {
         color: var(--text-muted);
         font-size: 0.85rem;
@@ -327,8 +345,8 @@
             <input id="hostname" name="hostname" placeholder="e.g. desk-042" />
           </div>
           <div class="field">
-            <label for="os-profile-select">OS profile</label>
-            <select name="os_profile" id="os-profile-select"></select>
+            <label for="task-sequence-select">Task sequence</label>
+            <select name="task_sequence_id" id="task-sequence-select"></select>
           </div>
           <button type="submit">Queue reinstall</button>
         </form>
@@ -338,7 +356,7 @@
         <h2>Jobs</h2>
         <table>
           <thead>
-            <tr><th>ID</th><th>MAC</th><th>Profile</th><th>Status</th><th>Post-action</th><th>Technician</th><th>Updated</th></tr>
+            <tr><th>ID</th><th>MAC</th><th>Task sequence</th><th>Status</th><th>Domain join</th><th>Technician</th><th>Updated</th></tr>
           </thead>
           <tbody id="jobs-body"></tbody>
         </table>
@@ -399,7 +417,7 @@
 
       <section class="card">
         <h2>Apps</h2>
-        <p class="hint">Catalog for the "install-app" post-imaging action.</p>
+        <p class="hint">Installers/scripts usable as task sequence steps.</p>
         <form id="app-form">
           <div class="field">
             <label for="app-id">ID</label>
@@ -429,6 +447,39 @@
             <tr><th>ID</th><th>Label</th><th>R2 key</th><th>Kind</th><th></th></tr>
           </thead>
           <tbody id="apps-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Task sequences</h2>
+        <p class="hint">Bundles an OS profile with an ordered list of apps to install - what the WinPE wizard offers.</p>
+        <form id="task-sequence-form">
+          <div class="field">
+            <label for="ts-id">ID</label>
+            <input id="ts-id" name="id" placeholder="win11-pro-sales" required />
+          </div>
+          <div class="field">
+            <label for="ts-label">Label</label>
+            <input id="ts-label" name="label" placeholder="Windows 11 Pro - Sales laptop" required />
+          </div>
+          <div class="field">
+            <label for="ts-profile-select">OS profile</label>
+            <select id="ts-profile-select" name="osProfileId"></select>
+          </div>
+          <div class="field">
+            <label for="ts-step-select">Step to add</label>
+            <select id="ts-step-select"></select>
+          </div>
+          <button type="button" id="ts-add-step">Add step</button>
+          <button type="submit" id="ts-submit">Add task sequence</button>
+          <button type="button" id="ts-cancel" hidden>Cancel</button>
+        </form>
+        <ol id="ts-steps-list" class="steps-list"></ol>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Label</th><th>OS profile</th><th>Steps</th><th></th></tr>
+          </thead>
+          <tbody id="task-sequences-body"></tbody>
         </table>
       </section>
       </div>

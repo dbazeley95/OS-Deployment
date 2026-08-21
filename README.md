@@ -1,13 +1,12 @@
-# OS Deployment
+# W.I.P.E
 
-A web-based OS reinstall system: GitHub hosts the code and CI/CD, Cloudflare
-hosts the admin UI, API, and OS images, and a small on-prem piece bridges
-the gap that cloud services can't cross (getting a bare-metal machine
-bootable).
+**W**indows **I**nstallation **P**rovisioning **E**ngine — a web-based OS
+reinstall system: GitHub hosts the code and CI/CD, Cloudflare hosts the
+admin UI, API, and OS images, and a small on-prem piece bridges the gap
+that cloud services can't cross (getting a bare-metal machine bootable).
 
-Currently deploys **Windows only** — the design is OS-agnostic (adding a
-profile is one entry in `worker/src/lib/profiles.ts` plus an answer file
-under `boot/profiles/`), but Windows is the one wired up end to end.
+Windows only, by design — see `worker/src/lib/profiles.ts` and
+`boot/profiles/` if you ever need to add another OS profile.
 
 **Primary path: a signed WinPE image running a Windows Forms GUI**
 (`boot/winpe/DeployGui.ps1`), delivered via WDS or a bootable USB stick —

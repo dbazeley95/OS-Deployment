@@ -33,7 +33,7 @@ function Invoke-DeployApi {
 
 function Show-ErrorBox {
     param([string]$Message)
-    [System.Windows.Forms.MessageBox]::Show($Message, "OS Deployment", "OK", "Error") | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($Message, "W.I.P.E", "OK", "Error") | Out-Null
 }
 
 # --- Step 1: technician login -------------------------------------------
@@ -42,7 +42,7 @@ function Show-LoginForm {
     param([string]$Mac)
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "OS Deployment - Sign in"
+    $form.Text = "W.I.P.E - Sign in"
     $form.Size = New-Object System.Drawing.Size(380, 220)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
@@ -103,7 +103,7 @@ function Show-SelectionForm {
     param($AuthResponse)
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "OS Deployment - Options"
+    $form.Text = "W.I.P.E - Options"
     $form.Size = New-Object System.Drawing.Size(460, 420)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
@@ -260,7 +260,7 @@ function Show-DeployForm {
     param($Deployment)
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "OS Deployment - Deploying"
+    $form.Text = "W.I.P.E - Deploying"
     $form.Size = New-Object System.Drawing.Size(560, 380)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"

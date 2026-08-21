@@ -101,6 +101,7 @@ deployRoute.post("/select", async (c) => {
       username?: string;
       password?: string;
       hostname?: string;
+      serialNumber?: string;
       taskSequenceId?: string;
       domainJoin?: boolean;
       domain?: string;
@@ -142,6 +143,7 @@ deployRoute.post("/select", async (c) => {
     domainJoin: Boolean(body.domainJoin),
     domain: body.domainJoin ? body.domain : undefined,
     hostname: body.hostname,
+    serialNumber: body.serialNumber,
   });
 
   const origin = new URL(c.req.url).origin;

@@ -78,11 +78,12 @@ async function loadDevices() {
           (d) => `<tr>
             <td class="mac">${d.mac}</td>
             <td>${d.hostname ?? "—"}</td>
+            <td class="mono">${d.serial_number ?? "—"}</td>
             <td>${d.last_seen_at ?? "—"}</td>
           </tr>`
         )
         .join("")
-    : emptyRow(3, "No devices yet.");
+    : emptyRow(4, "No devices yet.");
 }
 
 async function loadProfilesTable() {

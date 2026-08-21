@@ -1,15 +1,16 @@
 import type { Bindings, DeploymentJob, Device, JobStatus } from "../types";
 
-export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string) {
+export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string, serialNumber?: string) {
   await db
     .prepare(
-      `INSERT INTO devices (mac, hostname, last_seen_at)
-       VALUES (?1, ?2, datetime('now'))
+      `INSERT INTO devices (mac, hostname, serial_number, last_seen_at)
+       VALUES (?1, ?2, ?3, datetime('now'))
        ON CONFLICT(mac) DO UPDATE SET
          hostname = COALESCE(?2, hostname),
+         serial_number = COALESCE(?3, serial_number),
          last_seen_at = datetime('now')`
     )
-    .bind(mac, hostname ?? null)
+    .bind(mac, hostname ?? null, serialNumber ?? null)
     .run();
 }
 
@@ -104,11 +105,12 @@ export async function resolveOrCreateJob(
     domainJoin?: boolean;
     domain?: string;
     hostname?: string;
+    serialNumber?: string;
   }
 ): Promise<number> {
-  // hostname may be entered fresh even if a job for this mac already exists
-  // (upsertDevice is idempotent), so record it unconditionally.
-  if (opts.hostname) await upsertDevice(db, mac, opts.hostname);
+  // hostname/serialNumber may be reported fresh even if a job for this mac
+  // already exists (upsertDevice is idempotent), so record them unconditionally.
+  if (opts.hostname || opts.serialNumber) await upsertDevice(db, mac, opts.hostname, opts.serialNumber);
 
   const existing = await getPendingJobForMac(db, mac);
   const id =

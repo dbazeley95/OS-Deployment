@@ -15,8 +15,10 @@ import {
   getTaskSequence,
   listTaskSequences,
   TaskSequenceInput,
+  TaskSequenceStep,
   updateTaskSequence,
 } from "../lib/taskSequences";
+import { BUILTIN_ACTIONS } from "../lib/builtinActions";
 
 const INSTALL_KINDS: InstallKind[] = ["msi", "exe", "script"];
 
@@ -115,16 +117,27 @@ catalogRoute.delete("/apps/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+function isValidStep(s: unknown): s is TaskSequenceStep {
+  return (
+    typeof s === "object" &&
+    s !== null &&
+    ((s as TaskSequenceStep).kind === "app" || (s as TaskSequenceStep).kind === "builtin") &&
+    typeof (s as TaskSequenceStep).id === "string"
+  );
+}
+
 function parseTaskSequenceInput(body: unknown): TaskSequenceInput | { error: string } {
   const b = body as Partial<TaskSequenceInput> | null;
   if (!b?.id || !b.label || !b.osProfileId) {
     return { error: "id, label, and osProfileId are required" };
   }
-  if (b.stepIds !== undefined && (!Array.isArray(b.stepIds) || !b.stepIds.every((s) => typeof s === "string"))) {
-    return { error: "stepIds must be an array of app ids" };
+  if (b.steps !== undefined && (!Array.isArray(b.steps) || !b.steps.every(isValidStep))) {
+    return { error: "steps must be an array of {kind: 'app'|'builtin', id: string}" };
   }
-  return { id: b.id, label: b.label, osProfileId: b.osProfileId, stepIds: b.stepIds ?? [] };
+  return { id: b.id, label: b.label, osProfileId: b.osProfileId, steps: b.steps ?? [] };
 }
+
+catalogRoute.get("/builtin-actions", (c) => c.json(BUILTIN_ACTIONS));
 
 catalogRoute.get("/task-sequences", async (c) => c.json(await listTaskSequences(c.env.DB)));
 

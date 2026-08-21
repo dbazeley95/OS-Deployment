@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Bindings, PostAction } from "../types";
-import { getPendingJobForMac, resolveOrCreateJob } from "../lib/db";
+import { getDevice, getPendingJobForMac, resolveOrCreateJob } from "../lib/db";
 import { getProfile, listProfiles } from "../lib/profiles";
 import { getApp, listApps } from "../lib/apps";
 import { verifyTechnicianCredentials } from "../lib/auth";
@@ -23,18 +23,23 @@ function imageUrl(origin: string, key: string): string {
 async function deploymentPayload(
   db: Bindings["DB"],
   origin: string,
+  mac: string,
   profileId: string,
   postAction: PostAction,
-  appId?: string | null
+  appId?: string | null,
+  domain?: string | null
 ) {
   const profile = await getProfile(db, profileId);
   if (!profile) return null;
   const app = appId ? await getApp(db, appId) : undefined;
+  const device = await getDevice(db, mac);
   return {
     status: "ready" as const,
     profile: profile.id,
     postAction,
     appId: app?.id,
+    hostname: device?.hostname ?? null,
+    domain: postAction === "domain-join" ? (domain ?? null) : undefined,
     installWim: imageUrl(origin, profile.installWim),
     imageIndex: profile.imageIndex,
     answerFileUrl: imageUrl(origin, profile.answerFile),
@@ -61,7 +66,7 @@ deployRoute.post("/auth", async (c) => {
   const job = await getPendingJobForMac(c.env.DB, mac);
 
   if (job?.post_action) {
-    const payload = await deploymentPayload(c.env.DB, origin, job.os_profile, job.post_action, job.app_id);
+    const payload = await deploymentPayload(c.env.DB, origin, mac, job.os_profile, job.post_action, job.app_id, job.domain);
     if (payload) return c.json(payload);
   }
   if (job) {
@@ -84,6 +89,8 @@ deployRoute.post("/select", async (c) => {
       profile?: string;
       postAction?: string;
       appId?: string;
+      hostname?: string;
+      domain?: string;
     }>()
     .catch(() => null);
   if (!body?.mac || !MAC_RE.test(body.mac)) {
@@ -108,6 +115,12 @@ deployRoute.post("/select", async (c) => {
     const apps = await listApps(c.env.DB);
     return c.json({ error: `appId must be one of: ${apps.map((a) => a.id).join(", ")}` }, 400);
   }
+  if (!body.hostname?.trim()) {
+    return c.json({ error: "hostname is required" }, 400);
+  }
+  if (body.postAction === "domain-join" && !body.domain?.trim()) {
+    return c.json({ error: "domain is required for the domain-join post-action" }, 400);
+  }
 
   const mac = body.mac.toLowerCase();
   const postAction = body.postAction as PostAction;
@@ -116,9 +129,11 @@ deployRoute.post("/select", async (c) => {
     log: `selected via WinPE by ${body.username}`,
     postAction,
     appId: body.appId,
+    hostname: body.hostname,
+    domain: body.domain,
   });
 
   const origin = new URL(c.req.url).origin;
-  const payload = await deploymentPayload(c.env.DB, origin, body.profile, postAction, body.appId);
+  const payload = await deploymentPayload(c.env.DB, origin, mac, body.profile, postAction, body.appId, body.domain);
   return c.json(payload);
 });

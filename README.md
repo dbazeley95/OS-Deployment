@@ -152,11 +152,13 @@ OS profile/app catalog.
 Boot the target machine from the WinPE image (network boot via WDS, or the
 USB stick). A GUI window (`DeployGui.ps1`, fetched fresh from R2 - always
 reflects the current catalog) prompts for technician credentials, then
-either an OS profile and post-imaging action (domain join / install an
-app / leave at OOBE for Autopilot) if nothing's pre-staged, or picks up a
-job already queued from the admin UI. It applies the image with a live
-progress log, and at first logon the generalized `PostAction.ps1` runs
-whichever action was chosen.
+either an OS profile, hostname, and post-imaging action (domain join,
+plus which domain / install an app / leave at OOBE for Autopilot) if
+nothing's pre-staged, or picks up a job already queued from the admin UI.
+It applies the image with a live progress log - setting the entered
+hostname and, for a domain-join, at first logon the generalized
+`PostAction.ps1` only has to prompt for join credentials, since the
+domain itself was already decided during WinPE.
 
 Pre-staging (optional): in the admin UI, enter a target machine's MAC
 address, pick a profile, click "Queue reinstall" ahead of time — the

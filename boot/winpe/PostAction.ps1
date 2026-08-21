@@ -1,11 +1,11 @@
 # Single generalized first-logon script, referenced identically from every
 # profile's autounattend.xml FirstLogonCommands (see
-# boot/profiles/windows-11-25h2-*/autounattend.xml). Deploy.ps1 (WinPE side)
-# already wrote C:\Windows\Setup\Scripts\post-action.json describing what
-# the technician chose - this script always phones home, then branches on
-# that choice. The technician already decided *whether* to domain-join
-# during WinPE, so unlike the old always-run domain-join.ps1, this doesn't
-# ask again - it goes straight to the details.
+# boot/profiles/windows-11-25h2-*/autounattend.xml). DeployGui.ps1 (WinPE
+# side) already wrote C:\Windows\Setup\Scripts\post-action.json describing
+# what the technician chose - including the domain to join, if any, entered
+# in the WinPE GUI itself - this script always phones home, then branches
+# on that choice. It only asks for domain-join credentials here; the domain
+# name itself was already decided during WinPE, not asked again.
 
 $WorkerBase = "https://api.osd.xcet.uk"
 $configPath = "C:\Windows\Setup\Scripts\post-action.json"
@@ -28,9 +28,14 @@ $config = Get-Content $configPath | ConvertFrom-Json
 switch ($config.action) {
     "domain-join" {
         Add-Type -AssemblyName Microsoft.VisualBasic
-        $domain = [Microsoft.VisualBasic.Interaction]::InputBox(
-            "Domain name (e.g. corp.example.com)", "Domain Join", ""
-        )
+        $domain = $config.domain
+        if ([string]::IsNullOrWhiteSpace($domain)) {
+            # Fallback for jobs from before the WinPE GUI collected a domain
+            # (or the older iPXE path, which has no mechanism to convey one).
+            $domain = [Microsoft.VisualBasic.Interaction]::InputBox(
+                "Domain name (e.g. corp.example.com)", "Domain Join", ""
+            )
+        }
         if ([string]::IsNullOrWhiteSpace($domain)) {
             Write-Host "No domain entered - skipping domain join."
             break

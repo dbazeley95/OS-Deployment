@@ -40,6 +40,11 @@
   <settings pass="specialize">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <!-- WIN-REIMAGED is a placeholder DeployGui.ps1 replaces with the
+           technician-entered hostname before writing this file to disk
+           (see ../../winpe/README.md) - it's also the value Windows gets
+           if this file is used unmodified via the older iPXE path, which
+           has no substitution mechanism, so keep it a valid computer name. -->
       <ComputerName>WIN-REIMAGED</ComputerName>
     </component>
   </settings>

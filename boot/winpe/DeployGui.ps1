@@ -132,6 +132,18 @@ function Show-SelectionForm {
         $y += 30
     }
 
+    $labelHostname = New-Object System.Windows.Forms.Label
+    $labelHostname.Text = "Hostname"
+    $labelHostname.Location = New-Object System.Drawing.Point(20, $y)
+    $labelHostname.AutoSize = $true
+    $form.Controls.Add($labelHostname)
+
+    $textHostname = New-Object System.Windows.Forms.TextBox
+    $textHostname.Location = New-Object System.Drawing.Point(150, ($y - 3))
+    $textHostname.Width = 220
+    $form.Controls.Add($textHostname)
+    $y += 35
+
     $labelAction = New-Object System.Windows.Forms.Label
     $labelAction.Text = "After Windows installs:"
     $labelAction.Location = New-Object System.Drawing.Point(20, $y)
@@ -145,6 +157,12 @@ function Show-SelectionForm {
     $radioDomain.AutoSize = $true
     $radioDomain.Checked = $true
     $form.Controls.Add($radioDomain)
+
+    $textDomain = New-Object System.Windows.Forms.TextBox
+    $textDomain.Location = New-Object System.Drawing.Point(180, ($y - 3))
+    $textDomain.Width = 190
+    $textDomain.Enabled = $true
+    $form.Controls.Add($textDomain)
     $y += 28
 
     $radioApp = New-Object System.Windows.Forms.RadioButton
@@ -172,6 +190,7 @@ function Show-SelectionForm {
     $y += 40
 
     $radioApp.Add_CheckedChanged({ $comboApp.Enabled = $radioApp.Checked })
+    $radioDomain.Add_CheckedChanged({ $textDomain.Enabled = $radioDomain.Checked })
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Continue"
@@ -185,6 +204,11 @@ function Show-SelectionForm {
         return $null
     }
 
+    if ([string]::IsNullOrWhiteSpace($textHostname.Text)) {
+        Show-ErrorBox "Enter a hostname for this device."
+        return $null
+    }
+
     $postAction = if ($radioApp.Checked) { "install-app" } elseif ($radioAutopilot.Checked) { "autopilot" } else { "domain-join" }
     $appId = $null
     if ($postAction -eq "install-app") {
@@ -194,6 +218,14 @@ function Show-SelectionForm {
         }
         $appId = $AuthResponse.apps[$comboApp.SelectedIndex].id
     }
+    $domain = $null
+    if ($postAction -eq "domain-join") {
+        if ([string]::IsNullOrWhiteSpace($textDomain.Text)) {
+            Show-ErrorBox "Enter the domain to join."
+            return $null
+        }
+        $domain = $textDomain.Text.Trim()
+    }
     $profileId = if ($comboProfile) {
         if ($comboProfile.SelectedIndex -lt 0) { Show-ErrorBox "Pick an OS profile."; return $null }
         $AuthResponse.profiles[$comboProfile.SelectedIndex].id
@@ -201,7 +233,7 @@ function Show-SelectionForm {
         $AuthResponse.profile
     }
 
-    return @{ Profile = $profileId; PostAction = $postAction; AppId = $appId }
+    return @{ Profile = $profileId; PostAction = $postAction; AppId = $appId; Hostname = $textHostname.Text.Trim(); Domain = $domain }
 }
 
 # --- Step 3: confirm + deploy, with a live progress log -------------------
@@ -217,7 +249,7 @@ function Show-DeployForm {
     $form.MaximizeBox = $false
 
     $labelSummary = New-Object System.Windows.Forms.Label
-    $labelSummary.Text = "$($Deployment.profile) / $($Deployment.postAction)$(if ($Deployment.appId) { " ($($Deployment.appId))" })"
+    $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.profile) / $($Deployment.postAction)$(if ($Deployment.appId) { " ($($Deployment.appId))" })$(if ($Deployment.domain) { " [$($Deployment.domain)]" })"
     $labelSummary.Location = New-Object System.Drawing.Point(20, 15)
     $labelSummary.AutoSize = $true
     $form.Controls.Add($labelSummary)
@@ -278,11 +310,19 @@ assign letter=W
 
             Write-Log "Writing answer file and post-action config..."
             New-Item -ItemType Directory -Force -Path "W:\Windows\Panther" | Out-Null
-            Invoke-WebRequest -Uri $Deployment.answerFileUrl -OutFile "W:\Windows\Panther\unattend.xml"
+            # The answer file's <ComputerName> ships as the placeholder
+            # "WIN-REIMAGED" (see boot/profiles/*/autounattend.xml) - swap it
+            # for the technician-entered hostname before writing to disk.
+            # Fall back to a MAC-derived name for jobs pre-staged without one
+            # (the "ready" fast-path never shows this form to ask).
+            $computerName = if ($Deployment.hostname) { $Deployment.hostname } else { "WIN-" + ($mac -replace ":", "").Substring(6).ToUpper() }
+            $answerFileContent = (Invoke-WebRequest -Uri $Deployment.answerFileUrl -UseBasicParsing).Content
+            $answerFileContent = $answerFileContent -replace "WIN-REIMAGED", $computerName
+            Set-Content -Path "W:\Windows\Panther\unattend.xml" -Value $answerFileContent -Encoding UTF8
 
             New-Item -ItemType Directory -Force -Path "W:\Windows\Setup\Scripts" | Out-Null
             Invoke-WebRequest -Uri $Deployment.postActionScriptUrl -OutFile "W:\Windows\Setup\Scripts\PostAction.ps1"
-            @{ action = $Deployment.postAction; appUrl = $Deployment.appUrl } | ConvertTo-Json |
+            @{ action = $Deployment.postAction; appUrl = $Deployment.appUrl; domain = $Deployment.domain } | ConvertTo-Json |
                 Set-Content -Path "W:\Windows\Setup\Scripts\post-action.json"
             $progressBar.Value = 92
 
@@ -330,6 +370,7 @@ while ($true) {
                 $deployment = Invoke-DeployApi -Path "/api/deploy/select" -Body @{
                     mac = $mac; username = $creds.Username; password = $creds.Password
                     profile = $selection.Profile; postAction = $selection.PostAction; appId = $selection.AppId
+                    hostname = $selection.Hostname; domain = $selection.Domain
                 }
             } catch {
                 Show-ErrorBox "Couldn't save selection: $($_.Exception.Message)"

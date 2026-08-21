@@ -18,6 +18,7 @@ export interface DeploymentJob {
   technician: string | null;
   post_action: string | null;
   app_id: string | null;
+  domain: string | null;
   updated_at: string;
 }
 

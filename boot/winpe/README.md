@@ -15,6 +15,25 @@ next boot with no image rebuild. What *is* baked in is the .NET runtime
 WinPE needs to run a Forms GUI at all — that only changes if you're
 updating the ADK/WinPE version itself.
 
+## What the GUI asks for
+
+Alongside OS profile and post-imaging action, `DeployGui.ps1` always
+prompts for a **hostname**, and (only for the `domain-join` action) which
+**domain** to join - both entered at boot-selection time rather than typed
+again at first logon:
+
+- The hostname gets recorded on the device (`devices.hostname` in D1) and
+  substituted into the answer file's `<ComputerName>` placeholder before
+  it's written to disk - see `boot/profiles/*/autounattend.xml`.
+- The domain gets recorded on the job (`deployment_jobs.domain`) and
+  written into `post-action.json`, so `PostAction.ps1` at first logon only
+  has to prompt for join credentials, not the domain name itself.
+
+Neither is asked again if a job was already fully pre-staged via the admin
+UI (the `status: "ready"` fast-path) - in that case the hostname falls
+back to a MAC-derived default if the admin didn't set one, since there's
+no prompt shown at all on that path.
+
 ## Build the image (Windows machine with the free Windows ADK + WinPE add-on)
 
 ```powershell

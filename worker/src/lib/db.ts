@@ -18,19 +18,24 @@ export async function listDevices(db: Bindings["DB"]): Promise<Device[]> {
   return results ?? [];
 }
 
+export async function getDevice(db: Bindings["DB"], mac: string): Promise<Device | null> {
+  const device = await db.prepare(`SELECT * FROM devices WHERE mac = ?1`).bind(mac).first<Device>();
+  return device ?? null;
+}
+
 export async function createJob(
   db: Bindings["DB"],
   mac: string,
   osProfile: string,
-  opts?: { hostname?: string; technician?: string; postAction?: PostAction; appId?: string }
+  opts?: { hostname?: string; technician?: string; postAction?: PostAction; appId?: string; domain?: string }
 ): Promise<number> {
   await upsertDevice(db, mac, opts?.hostname);
   const { meta } = await db
     .prepare(
-      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, post_action, app_id)
-       VALUES (?1, ?2, ?3, ?4, ?5)`
+      `INSERT INTO deployment_jobs (device_mac, os_profile, technician, post_action, app_id, domain)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
     )
-    .bind(mac, osProfile, opts?.technician ?? null, opts?.postAction ?? null, opts?.appId ?? null)
+    .bind(mac, osProfile, opts?.technician ?? null, opts?.postAction ?? null, opts?.appId ?? null, opts?.domain ?? null)
     .run();
   return meta.last_row_id as number;
 }
@@ -83,14 +88,23 @@ export async function resolveOrCreateJob(
   db: Bindings["DB"],
   mac: string,
   profileId: string,
-  opts: { technician: string; log: string; postAction?: PostAction; appId?: string }
+  opts: { technician: string; log: string; postAction?: PostAction; appId?: string; hostname?: string; domain?: string }
 ): Promise<number> {
+  // hostname may be entered fresh even if a job for this mac already exists
+  // (upsertDevice is idempotent), so record it unconditionally.
+  if (opts.hostname) await upsertDevice(db, mac, opts.hostname);
+
   const existing = await getPendingJobForMac(db, mac);
   const id =
     existing && existing.os_profile === profileId
       ? existing.id
-      : await createJob(db, mac, profileId, { technician: opts.technician, postAction: opts.postAction, appId: opts.appId });
-  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.postAction, opts.appId);
+      : await createJob(db, mac, profileId, {
+          technician: opts.technician,
+          postAction: opts.postAction,
+          appId: opts.appId,
+          domain: opts.domain,
+        });
+  await updateJobStatus(db, id, "booted", opts.log, opts.technician, opts.postAction, opts.appId, opts.domain);
   return id;
 }
 
@@ -101,7 +115,8 @@ export async function updateJobStatus(
   log?: string,
   technician?: string,
   postAction?: PostAction,
-  appId?: string
+  appId?: string,
+  domain?: string
 ): Promise<void> {
   await db
     .prepare(
@@ -109,9 +124,10 @@ export async function updateJobStatus(
          technician = COALESCE(?4, technician),
          post_action = COALESCE(?5, post_action),
          app_id = COALESCE(?6, app_id),
+         domain = COALESCE(?7, domain),
          updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, status, log ?? null, technician ?? null, postAction ?? null, appId ?? null)
+    .bind(id, status, log ?? null, technician ?? null, postAction ?? null, appId ?? null, domain ?? null)
     .run();
 }

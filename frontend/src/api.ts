@@ -113,6 +113,35 @@ export const api = {
   deleteCatalogProfile: (id: string) =>
     request<{ ok: true }>(`/api/catalog/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
+  // Direct WIM upload - wraps R2 multipart upload so a technician can pick a
+  // multi-GB install.wim in the browser instead of typing an R2 key by hand.
+  createUpload: (key: string) =>
+    request<{ key: string; uploadId: string }>("/api/catalog/uploads", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
+  uploadPart: async (uploadId: string, key: string, partNumber: number, chunk: Blob): Promise<{ partNumber: number; etag: string }> => {
+    const res = await fetch(
+      `${API_BASE}/api/catalog/uploads/${encodeURIComponent(uploadId)}/parts/${partNumber}?key=${encodeURIComponent(key)}`,
+      { method: "PUT", credentials: "include", body: chunk }
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError((body as { error?: string }).error ?? `Request failed: ${res.status}`, res.status);
+    }
+    return res.json();
+  },
+  completeUpload: (uploadId: string, key: string, parts: { partNumber: number; etag: string }[]) =>
+    request<{ ok: true }>(`/api/catalog/uploads/${encodeURIComponent(uploadId)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ key, parts }),
+    }),
+  abortUpload: (uploadId: string, key: string) =>
+    request<{ ok: true }>(`/api/catalog/uploads/${encodeURIComponent(uploadId)}/abort`, {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
+
   listCatalogApps: () => request<AppEntry[]>("/api/catalog/apps"),
   createCatalogApp: (app: AppEntry) =>
     request<{ ok: true }>("/api/catalog/apps", { method: "POST", body: JSON.stringify(app) }),

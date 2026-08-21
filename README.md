@@ -71,7 +71,9 @@ VITE_API_BASE=http://localhost:8787 npm run dev
 
 See `boot/profiles/windows-11-25h2/README.md` for the full walkthrough
 (trimming `install.wim` to the Pro + Education indices), then push the
-essentials to R2:
+essentials to R2. `install.wim` itself can instead be uploaded straight from
+the admin UI's "OS profiles" form (chunked multipart upload straight to R2 -
+no CLI needed), which also fills in its R2 key automatically:
 
 ```bash
 scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim

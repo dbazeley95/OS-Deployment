@@ -237,6 +237,20 @@
         padding: 0.5rem 0;
       }
 
+      .version-badge {
+        display: inline-block;
+        vertical-align: middle;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+        margin-left: 0.6rem;
+      }
+
       .hint {
         color: var(--text-muted);
         font-size: 0.85rem;
@@ -275,8 +289,10 @@
   <body>
     <main>
       <header>
-        <h1>OS Deployment</h1>
-        <p>Queue Windows reinstalls and track them through to completion.</p>
+        <div>
+          <h1>OS Deployment <span id="version-badge" class="version-badge" title="Build version"></span></h1>
+          <p>Queue Windows reinstalls and track them through to completion.</p>
+        </div>
         <button id="logout-btn" type="button" hidden>Log out</button>
       </header>
 

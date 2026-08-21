@@ -26,6 +26,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE: ${{ vars.WORKER_API_BASE }}
+          VITE_COMMIT_SHA: ${{ github.sha }}
       - name: Ensure Pages project exists
         uses: cloudflare/wrangler-action@v3
         continue-on-error: true # fails harmlessly once the project already exists

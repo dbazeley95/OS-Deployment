@@ -1,5 +1,10 @@
 import { api, ApiError, type AppEntry, type OsProfile } from "./api";
 
+const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
+const commitSha = import.meta.env.VITE_COMMIT_SHA;
+versionBadge.textContent = commitSha ? commitSha.slice(0, 7) : "dev";
+versionBadge.title = commitSha ? `Build ${commitSha}` : "Local dev build";
+
 const errorEl = document.querySelector<HTMLElement>("#error")!;
 const loginCard = document.querySelector<HTMLElement>("#login-card")!;
 const appEl = document.querySelector<HTMLElement>("#app")!;

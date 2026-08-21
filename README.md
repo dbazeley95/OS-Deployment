@@ -18,10 +18,8 @@ pick a **task sequence** - a cloud-editable bundle of one OS profile plus
 an ordered list of apps/customizations. The GUI script is fetched fresh
 from R2 on every boot rather than baked into the image, and the whole
 catalog (OS profiles, apps, task sequences) is managed from the admin UI
-(a "cloud Deployment Workbench") instead of a code change + redeploy. An
-older iPXE-based path (`boot/proxy-dhcp/`, `boot/profiles/`) is also
-documented as an alternative, but it depends on a custom-built `ipxe.efi`
-that Secure Boot will reject unless disabled.
+(a "cloud Deployment Workbench") instead of a code change + redeploy.
+UEFI only, by design - no legacy BIOS/MBR boot support.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and a sequence
 diagram of a deployment end to end.
@@ -31,19 +29,17 @@ diagram of a deployment end to end.
 - `worker/` — Cloudflare Worker: `/api/auth/*` (technician login for the
   admin UI), `/api/catalog/*` (OS profile/app/task-sequence catalog CRUD,
   the cloud editor), REST API (devices/jobs), `/api/deploy/*` (JSON API the
-  WinPE `DeployGui.ps1` GUI calls), `/boot/:mac` (the older iPXE-facing
-  route, generates a per-machine iPXE script from D1 job state), and
-  `/images/*`, which streams WIMs/answer files/scripts out of R2.
+  WinPE `DeployGui.ps1` GUI calls), and `/images/*`, which streams
+  WIMs/answer files/scripts out of R2.
 - `frontend/` — Cloudflare Pages: admin UI, gated behind a technician
   login — the OS profile/app/task-sequence catalog editor, plus a
   read-only log of devices and jobs (status, domain-join, which technician
   triggered it). No job scheduling - every deployment starts on-device.
-- `boot/winpe/` — the primary deployment path: build instructions for the
+- `boot/winpe/` — the deployment path: build instructions for the
   signed WinPE image, `DeployGui.ps1` (the Forms GUI, fetched fresh from
   R2 on every boot - not baked into the image), `PostAction.ps1` (runs at
   first logon).
-- `boot/proxy-dhcp/`, `boot/profiles/` — the older iPXE-based path and the
-  Windows unattend answer files (shared by both paths).
+- `boot/profiles/` — the Windows unattend answer files.
 - `scripts/upload-image.sh` — pushes a local boot file/WIM/script into the
   R2 images bucket. (`boot/winpe/*.ps1` is the exception — synced to R2
   automatically on push, see `.github/workflows/sync-winpe-scripts.yml`.)
@@ -87,13 +83,6 @@ scripts/upload-image.sh ./boot/profiles/windows-11-25h2-edu/autounattend.xml win
 upload — pushing to `main` syncs them to R2 automatically, see
 `.github/workflows/sync-winpe-scripts.yml`.)
 
-Only needed if you're also using the older iPXE path (`boot/proxy-dhcp/`):
-
-```bash
-scripts/upload-image.sh ./boot/bootx64.efi windows-11-25h2/boot/bootx64.efi
-scripts/upload-image.sh ./boot/boot.sdi windows-11-25h2/boot/boot.sdi
-```
-
 The two profiles above are seeded by migration `0004_catalog.sql`. For a
 new edition or app, upload the installer/script with
 `scripts/upload-image.sh` and add a matching entry from the admin UI's "OS
@@ -105,10 +94,10 @@ offers technicians. Migration `0006_task_sequences.sql`/
 
 ### 3b. Provision technicians
 
-`/boot/:mac` (Basic Auth), `/api/deploy/*` (credentials in the request
-body), and now `/api/auth/login` (the admin UI itself) all check against
-the same `technicians` D1 table — there's no self-service signup on
-purpose. Compute a salted, peppered hash and print the SQL to insert it:
+`/api/deploy/*` (credentials in the request body) and `/api/auth/login`
+(the admin UI itself) both check against the same `technicians` D1
+table — there's no self-service signup on purpose. Compute a salted,
+peppered hash and print the SQL to insert it:
 
 ```bash
 PASSWORD_PEPPER=<same value as the WORKER_PASSWORD_PEPPER GitHub secret> \
@@ -145,9 +134,7 @@ zone already hosted on Cloudflare:
 
 See `boot/winpe/README.md` — build the signed WinPE image once, deliver it
 via WDS (network boot) or a bootable USB stick. This is the one piece that
-has to happen on your own machine/network rather than in the cloud. (Using
-the older iPXE path instead? See `boot/proxy-dhcp/README.md` — note its
-custom `ipxe.efi` won't run with Secure Boot enabled.)
+has to happen on your own machine/network rather than in the cloud.
 
 ## Using it
 
@@ -179,5 +166,4 @@ used, and whether it joined a domain.
 
 Read the "Security notes" section in `ARCHITECTURE.md` before pointing
 this at real hardware — notably: the admin UI now requires a technician
-login on its own, but consider Cloudflare Access as an additional layer,
-and keep PXE traffic on a segmented VLAN.
+login on its own, but consider Cloudflare Access as an additional layer.

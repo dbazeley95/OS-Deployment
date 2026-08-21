@@ -4,14 +4,10 @@
 > OS-agnostic (see `boot/profiles/README.md` for adding another profile), but
 > Windows is the one shipped end to end.
 
-> **Primary deployment path**: a signed WinPE image running a Windows
-> Forms GUI (`boot/winpe/DeployGui.ps1`), replacing MDT's Lite Touch
-> wizard. An older iPXE-based path (`boot/proxy-dhcp/`) is also
-> documented, but its custom-built `ipxe.efi` is unsigned and gets
-> rejected by UEFI Secure Boot — that's why it's no longer the
-> recommended default. Both paths share the same Worker/D1/R2 backend and
-> the same Windows answer files (`boot/profiles/`); they only differ in
-> how a bare-metal machine reaches the point of running the OS installer.
+> **Deployment path**: a signed WinPE image running a Windows Forms GUI
+> (`boot/winpe/DeployGui.ps1`), replacing MDT's Lite Touch wizard - no
+> custom unsigned binary in the boot chain, so it works cleanly under
+> UEFI Secure Boot. UEFI only, by design - no legacy BIOS/MBR support.
 >
 > The deployment catalog (OS profiles, apps, and **task sequences** - an OS
 > profile bundled with an ordered list of apps/customizations) lives in D1
@@ -27,21 +23,16 @@
 Cloudflare and GitHub can host every part of this system that speaks HTTPS: the
 admin UI, the deployment API, OS images, and unattended-install answer files.
 What they *cannot* do is get a bare-metal machine bootable in the first place
-— that's inherently local. Two ways to bridge that gap are documented:
+— that's inherently local. This system bridges that gap with:
 
-- **WinPE (primary)**: a stock, Microsoft-signed WinPE image runs a
-  Windows Forms GUI (`boot/winpe/DeployGui.ps1`) that talks to the
-  Worker's JSON API directly. Delivered via WDS (network boot) or a
-  bootable USB stick — no DHCP/PXE-specific infrastructure required
-  either way. The GUI script itself is fetched fresh from R2 on every
-  boot rather than baked into the image, so it (and the catalog it
-  offers) can change without an image rebuild.
-- **iPXE (alternative)**: a **proxyDHCP** service (e.g. `dnsmasq`) tells a
-  netbooting machine where to fetch iPXE, which chains to the Worker over
-  HTTPS for everything else. Requires Secure Boot to be off, since the
-  iPXE binary involved is unsigned.
+- **WinPE**: a stock, Microsoft-signed WinPE image runs a Windows Forms
+  GUI (`boot/winpe/DeployGui.ps1`) that talks to the Worker's JSON API
+  directly. Delivered via WDS (network boot) or a bootable USB stick —
+  no DHCP/PXE-specific infrastructure required. The GUI script itself is
+  fetched fresh from R2 on every boot rather than baked into the image,
+  so it (and the catalog it offers) can change without an image rebuild.
 
-Everything past that first local hop is cloud-hosted, for either path.
+Everything past that first local hop is cloud-hosted.
 
 ## Components
 
@@ -51,23 +42,21 @@ Everything past that first local hop is cloud-hosted, for either path.
 | Auth API | Cloudflare Workers | `/api/auth/*` — technician login/logout, issues the admin UI's session cookie |
 | Catalog API | Cloudflare Workers | `/api/catalog/*` — CRUD for OS profiles, apps, and task sequences (D1-backed), behind the session login - the "cloud Deployment Workbench" |
 | Deploy API | Cloudflare Workers | `/api/deploy/*` — JSON API the WinPE `DeployGui.ps1` script calls for technician auth, hostname/domain-join/task-sequence selection, and image/answer-file URLs (never domain-join credentials - those stay device-local) |
-| iPXE boot script generator | Cloudflare Workers | `/boot/:mac` — the older iPXE-facing route, returns a per-machine iPXE script |
 | State | Cloudflare D1 | Device inventory, deployment jobs (task sequence used, domain-join name), status/history, technicians, OS profile/app/task-sequence catalog |
-| Images & answer files | Cloudflare R2 | Windows WIM images, unattend.xml answer files, `DeployGui.ps1`/`PostAction.ps1`, app installers - streamed to WinPE/iPXE over HTTPS |
+| Images & answer files | Cloudflare R2 | Windows WIM images, unattend.xml answer files, `DeployGui.ps1`/`PostAction.ps1`, app installers - streamed to WinPE over HTTPS |
 | CI/CD | GitHub Actions | Deploy the Worker (`wrangler deploy`) and Pages site on push to main; sync `boot/winpe/*.ps1` to R2 on push |
-| Getting bootable | On-prem | WinPE via WDS/USB (primary), or `dnsmasq` proxyDHCP + iPXE (alternative) |
+| Getting bootable | On-prem | WinPE via WDS/USB |
 
 ## Flow
 
-### WinPE path (primary)
+### WinPE path
 
 There's no admin-side scheduling anywhere in this system - every
 deployment starts on the machine itself. A technician boots it cold (WDS
 or USB) and enters everything on the spot via a real Windows Forms GUI
 (`DeployGui.ps1`, fetched fresh from R2 on every boot - not baked into the
-image), which authenticates against the same `technicians` D1 table as
-the iPXE path below, just over a plain JSON API instead of HTTP Basic Auth
-(a WinPE script doesn't get that prompt for free the way iPXE does). Its
+image), which authenticates against the `technicians` D1 table over a
+plain JSON API (no browser to prompt for HTTP Basic Auth). Its
 task-sequence dropdown is whatever's currently in the D1-backed catalog
 (managed via the admin UI's own login-gated `/api/catalog/*`, not code) -
 the admin UI's job is that catalog editor plus a read-only log of jobs,
@@ -116,73 +105,33 @@ sequenceDiagram
     Worker->>D1: update job status
 ```
 
-### iPXE path (alternative, Secure Boot must be off)
-
-```mermaid
-sequenceDiagram
-    participant Tech as Technician
-    participant Target as Target machine (PXE)
-    participant DHCP as On-prem proxyDHCP/TFTP
-    participant Worker as Cloudflare Worker (API)
-    participant D1
-    participant R2
-
-    Note over Target,DHCP: Tech reboots the machine, PXE boot enabled
-    Target->>DHCP: DHCP discover (PXE options)
-    DHCP-->>Target: hands out iPXE binary via TFTP
-    Target->>Worker: iPXE chainloads https://.../boot/<mac>
-    Worker-->>Target: 401 (no/invalid credentials)
-    Target->>Tech: iPXE prompts for username/password
-    Tech->>Target: enters credentials
-    Target->>Worker: retries with Basic Auth
-    Worker->>D1: verify technician; look up pending job for mac
-
-    alt no in-progress job for this mac
-        Worker-->>Target: iPXE menu (profile choices)
-        Target->>Tech: technician picks a profile
-        Target->>Worker: chain /boot/<mac>/install?profile=... (cached auth)
-        Worker->>D1: create job (status=booted, technician=...)
-    else retry - this mac already has a booted, incomplete job
-        Worker->>D1: mark booted, record confirming technician
-    end
-
-    Worker-->>Target: dynamic iPXE script (kernel/initrd/answerfile URLs)
-    Target->>R2: fetch kernel, initrd, answer file (via Worker, unauthenticated)
-    Target->>Target: unattended install runs; no wizard collected a domain or task sequence, so PostAction.ps1 defaults to no domain-join and no steps
-    Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=complete} (phone-home)
-    Worker->>D1: update job status
-```
-
 ## Repo layout
 
 ```
-worker/            Cloudflare Worker: REST API, /api/auth/*, /api/catalog/*, /api/deploy/* (WinPE), /boot/:mac (iPXE) (Hono + D1 + R2)
+worker/            Cloudflare Worker: REST API, /api/auth/*, /api/catalog/*, /api/deploy/* (WinPE) (Hono + D1 + R2)
 frontend/          Cloudflare Pages: admin UI (login, devices, jobs, deploy, OS profile/app catalog editor)
-boot/winpe/        Primary path: WinPE build docs, DeployGui.ps1, PostAction.ps1
-boot/proxy-dhcp/   Alternative path: iPXE snippets, proxyDHCP/option-66-67/HTTPS-Boot docs
-boot/profiles/     Per-OS unattended-install answer files, shared by both paths
+boot/winpe/        WinPE build docs, DeployGui.ps1, PostAction.ps1
+boot/profiles/     Per-OS unattended-install answer files
 .github/           CI + deploy workflows, WinPE script -> R2 sync
 ```
 
 ## Security notes (read before pointing this at real hardware)
 
-- `/api/deploy/*` (JSON body credentials) and `/boot/:mac`/`/boot/:mac/install`
-  (HTTP Basic Auth) both check the same `technicians` D1 table
-  (`worker/src/lib/auth.ts` / `verifyTechnicianCredentials`), so any
+- `/api/deploy/*` (JSON body credentials, `worker/src/lib/auth.ts` /
+  `verifyTechnicianCredentials`) checks the `technicians` D1 table, so any
   technician with valid credentials can trigger a reinstall on **any** MAC
-  that boots the WinPE image or PXE-boots — not just pre-registered ones.
-  That's the point (self-service, no admin bottleneck, no scheduling step
-  to bypass) - the real safety boundary is who holds valid technician
-  credentials and which machines can reach your deployment infrastructure
-  at all.
+  that boots the WinPE image — not just pre-registered ones. That's the
+  point (self-service, no admin bottleneck, no scheduling step to bypass)
+  - the real safety boundary is who holds valid technician credentials
+  and which machines can reach your deployment infrastructure at all.
 - `/api/devices`, `/api/jobs`, and `/api/catalog/*` (the admin UI's own
   REST API) require a technician login (`/api/auth/login`, an
   `HttpOnly`/`Secure`/`SameSite=Strict` session cookie signed with the
   same `PASSWORD_PEPPER` used for technician passwords). `/api/deploy/*`
   keeps its own separate credential-in-body model for WinPE, and
-  `/boot/*`/`/images/*` are unaffected — neither is a browser session.
-  Consider Cloudflare Access (Zero Trust) as an additional layer if you
-  want network-level restriction on top of this.
+  `/images/*` is unaffected — it isn't a browser session. Consider
+  Cloudflare Access (Zero Trust) as an additional layer if you want
+  network-level restriction on top of this.
 - `/images/*` (WIMs, answer files, `PostAction.ps1`, app installers) is
   intentionally left unauthenticated even after the auth changes above —
   everything served from there is static, pre-uploaded, non-secret content.
@@ -203,7 +152,3 @@ boot/profiles/     Per-OS unattended-install answer files, shared by both paths
   `autounattend.xml` templates; you supply your own licensed Windows media
   in R2 (see `boot/profiles/windows-11-25h2/README.md` for trimming it to
   size).
-- Keep PXE/proxyDHCP on a segmented VLAN if using the iPXE path — a rogue
-  proxyDHCP on a flat network can hijack any machine's boot process,
-  including yours. The WinPE path (WDS/USB) doesn't have this specific
-  risk, since it isn't answering broadcast DHCP/PXE requests the same way.

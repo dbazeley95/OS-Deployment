@@ -232,8 +232,6 @@ profileForm.addEventListener("submit", async (e) => {
     installWim: String(data.get("installWim")),
     imageIndex: Number(data.get("imageIndex")),
     answerFile: String(data.get("answerFile")),
-    kernel: (data.get("kernel") as string) || null,
-    initrd: (data.get("initrd") as string) || null,
   };
   try {
     if (editingProfileId) {
@@ -265,8 +263,6 @@ profilesBody.addEventListener("click", async (e) => {
     (profileForm.elements.namedItem("installWim") as HTMLInputElement).value = profile.installWim;
     (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
     (profileForm.elements.namedItem("answerFile") as HTMLInputElement).value = profile.answerFile;
-    (profileForm.elements.namedItem("kernel") as HTMLInputElement).value = profile.kernel ?? "";
-    (profileForm.elements.namedItem("initrd") as HTMLInputElement).value = profile.initrd ?? "";
     profileSubmitBtn.textContent = "Save profile";
     profileCancelBtn.hidden = false;
   } else if (deleteId) {

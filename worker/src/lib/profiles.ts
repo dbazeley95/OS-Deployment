@@ -15,10 +15,6 @@ export interface OsProfile {
   imageIndex: number;
   /** R2 key for the unattended-install answer file (unattend.xml). */
   answerFile: string;
-  /** iPXE boot path only - null if this profile isn't set up for iPXE. */
-  kernel: string | null;
-  /** iPXE boot path only - null if this profile isn't set up for iPXE. */
-  initrd: string | null;
 }
 
 interface OsProfileRow {
@@ -27,8 +23,6 @@ interface OsProfileRow {
   install_wim_key: string;
   image_index: number;
   answer_file_key: string;
-  kernel_key: string | null;
-  initrd_key: string | null;
 }
 
 function rowToProfile(row: OsProfileRow): OsProfile {
@@ -38,8 +32,6 @@ function rowToProfile(row: OsProfileRow): OsProfile {
     installWim: row.install_wim_key,
     imageIndex: row.image_index,
     answerFile: row.answer_file_key,
-    kernel: row.kernel_key,
-    initrd: row.initrd_key,
   };
 }
 
@@ -49,8 +41,6 @@ export interface OsProfileInput {
   installWim: string;
   imageIndex: number;
   answerFile: string;
-  kernel?: string | null;
-  initrd?: string | null;
 }
 
 export async function listProfiles(db: Bindings["DB"]): Promise<OsProfile[]> {
@@ -66,10 +56,10 @@ export async function getProfile(db: Bindings["DB"], id: string): Promise<OsProf
 export async function createProfile(db: Bindings["DB"], input: OsProfileInput): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO os_profiles (id, label, install_wim_key, image_index, answer_file_key, kernel_key, initrd_key)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      `INSERT INTO os_profiles (id, label, install_wim_key, image_index, answer_file_key)
+       VALUES (?1, ?2, ?3, ?4, ?5)`
     )
-    .bind(input.id, input.label, input.installWim, input.imageIndex, input.answerFile, input.kernel ?? null, input.initrd ?? null)
+    .bind(input.id, input.label, input.installWim, input.imageIndex, input.answerFile)
     .run();
 }
 
@@ -77,10 +67,10 @@ export async function updateProfile(db: Bindings["DB"], id: string, input: OsPro
   const { meta } = await db
     .prepare(
       `UPDATE os_profiles SET label = ?2, install_wim_key = ?3, image_index = ?4, answer_file_key = ?5,
-         kernel_key = ?6, initrd_key = ?7, updated_at = datetime('now')
+         updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, input.label, input.installWim, input.imageIndex, input.answerFile, input.kernel ?? null, input.initrd ?? null)
+    .bind(id, input.label, input.installWim, input.imageIndex, input.answerFile)
     .run();
   return meta.changes > 0;
 }

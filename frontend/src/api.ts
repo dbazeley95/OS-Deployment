@@ -31,8 +31,6 @@ export interface OsProfile {
   installWim: string;
   imageIndex: number;
   answerFile: string;
-  kernel: string | null;
-  initrd: string | null;
 }
 
 export type InstallKind = "msi" | "exe" | "script";

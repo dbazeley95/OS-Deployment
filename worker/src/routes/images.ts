@@ -3,8 +3,8 @@ import type { Bindings } from "../types";
 
 export const imagesRoute = new Hono<{ Bindings: Bindings }>();
 
-// Streams objects out of R2 so iPXE/the installer only ever needs to know
-// this Worker's origin, not the R2 bucket's public URL.
+// Streams objects out of R2 so WinPE only ever needs to know this Worker's
+// origin, not the R2 bucket's public URL.
 imagesRoute.get("/*", async (c) => {
   const key = c.req.path.replace(/^\/images\//, "");
   const object = await c.env.IMAGES.get(key);

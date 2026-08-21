@@ -25,26 +25,10 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function parseBasicAuth(header: string | null): { username: string; password: string } | null {
-  if (!header?.startsWith("Basic ")) return null;
-  let decoded: string;
-  try {
-    decoded = atob(header.slice("Basic ".length));
-  } catch {
-    return null;
-  }
-  const idx = decoded.indexOf(":");
-  if (idx === -1) return null;
-  return { username: decoded.slice(0, idx), password: decoded.slice(idx + 1) };
-}
-
-const UNAUTHORIZED_HEADERS = { "WWW-Authenticate": 'Basic realm="W.I.P.E", charset="UTF-8"' };
-
 /**
- * Verifies a username/password pair against the technicians table.
- * Shared by the iPXE-facing Basic Auth check below and the JSON
- * deploy API (worker/src/routes/deploy.ts), which takes credentials from
- * a request body instead of an Authorization header.
+ * Verifies a username/password pair against the technicians table. Used by
+ * the JSON deploy API (worker/src/routes/deploy.ts), which takes credentials
+ * from a request body.
  */
 export async function verifyTechnicianCredentials(
   db: Bindings["DB"],
@@ -77,7 +61,7 @@ function base64UrlDecode(s: string): string {
  * passwords (domain-separated via the "session:" prefix). Used by
  * worker/src/routes/auth.ts (login/logout) and the session-check middleware
  * in worker/src/index.ts that gates /api/devices, /api/jobs, /api/catalog -
- * NOT /api/deploy/* (WinPE's own credential model) or /boot/*, /images/*.
+ * NOT /api/deploy/* (WinPE's own credential model) or /images/*.
  */
 export async function signSessionToken(pepper: string, username: string, ttlSeconds: number): Promise<string> {
   const payload = base64UrlEncode(JSON.stringify({ u: username, exp: Math.floor(Date.now() / 1000) + ttlSeconds }));
@@ -100,29 +84,4 @@ export async function verifySessionToken(pepper: string, token: string | undefin
   if (typeof parsed.u !== "string" || typeof parsed.exp !== "number") return null;
   if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
   return parsed.u;
-}
-
-/**
- * Verifies HTTP Basic Auth against the technicians table. iPXE natively
- * prompts for credentials on a 401 and caches them per-host for the rest of
- * the boot session, so a technician is only prompted once even across
- * /boot/:mac and /boot/:mac/install.
- *
- * Returns the technician's username on success, or a 401 Response to return
- * directly from the route on failure.
- */
-export async function requireTechnician(
-  db: Bindings["DB"],
-  pepper: string,
-  authHeader: string | null
-): Promise<string | Response> {
-  const creds = parseBasicAuth(authHeader);
-  if (!creds) {
-    return new Response("Technician credentials required", { status: 401, headers: UNAUTHORIZED_HEADERS });
-  }
-  const valid = await verifyTechnicianCredentials(db, pepper, creds.username, creds.password);
-  if (!valid) {
-    return new Response("Invalid technician credentials", { status: 401, headers: UNAUTHORIZED_HEADERS });
-  }
-  return creds.username;
 }

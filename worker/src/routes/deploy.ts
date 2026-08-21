@@ -8,10 +8,9 @@ import { verifyTechnicianCredentials } from "../lib/auth";
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 
 /**
- * JSON API for the WinPE deploy GUI (boot/winpe/DeployGui.ps1) - the
- * PowerShell equivalent of the iPXE Basic-Auth-driven /boot/:mac flow in
- * boot.ts, since a WinPE script doesn't get HTTP Basic Auth prompting for
- * free the way iPXE does.
+ * JSON API for the WinPE deploy GUI (boot/winpe/DeployGui.ps1) - takes
+ * technician credentials in the request body, since a WinPE script has no
+ * browser to prompt for HTTP Basic Auth the way a netboot menu would.
  *
  * Domain-join credentials (username/password) are never sent here - only
  * the domain *name* is. DeployGui.ps1 collects the credentials locally and

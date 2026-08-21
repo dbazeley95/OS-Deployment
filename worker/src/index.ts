@@ -2,7 +2,6 @@ import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
 import { getCookie } from "hono/cookie";
 import type { Bindings } from "./types";
-import { bootRoute } from "./routes/boot";
 import { devicesRoute } from "./routes/devices";
 import { jobsRoute } from "./routes/jobs";
 import { imagesRoute } from "./routes/images";
@@ -17,7 +16,7 @@ app.use("/api/*", (c, next) => cors({ origin: c.env.ALLOWED_ORIGIN, credentials:
 
 // Gates the admin UI's own API behind a technician login (see routes/auth.ts).
 // Does NOT cover /api/deploy/* (WinPE's own credential-in-body model), or
-// /boot/*, /images/* (iPXE/WinPE fetch these directly, no browser session).
+// /images/* (WinPE fetches these directly, no browser session).
 async function requireSession(c: Context<{ Bindings: Bindings }>, next: Next) {
   const username = await verifySessionToken(c.env.PASSWORD_PEPPER, getCookie(c, "session"));
   if (!username) return c.json({ error: "login required" }, 401);
@@ -27,9 +26,8 @@ app.use("/api/devices/*", requireSession);
 app.use("/api/jobs/*", requireSession);
 app.use("/api/catalog/*", requireSession);
 
-app.get("/", (c) => c.text("W.I.P.E API: see /api/devices, /api/jobs, /boot/:mac"));
+app.get("/", (c) => c.text("W.I.P.E API: see /api/devices, /api/jobs"));
 
-app.route("/boot", bootRoute);
 app.route("/images", imagesRoute);
 app.route("/api/auth", authRoute);
 app.route("/api/devices", devicesRoute);

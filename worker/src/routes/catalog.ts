@@ -43,8 +43,6 @@ function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
     installWim: b.installWim,
     imageIndex: b.imageIndex,
     answerFile: b.answerFile,
-    kernel: b.kernel ?? null,
-    initrd: b.initrd ?? null,
   };
 }
 

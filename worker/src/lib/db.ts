@@ -1,0 +1,85 @@
+import type { Bindings, DeploymentJob, Device, JobStatus } from "../types";
+
+export async function upsertDevice(db: Bindings["DB"], mac: string, hostname?: string) {
+  await db
+    .prepare(
+      `INSERT INTO devices (mac, hostname, last_seen_at)
+       VALUES (?1, ?2, datetime('now'))
+       ON CONFLICT(mac) DO UPDATE SET
+         hostname = COALESCE(?2, hostname),
+         last_seen_at = datetime('now')`
+    )
+    .bind(mac, hostname ?? null)
+    .run();
+}
+
+export async function listDevices(db: Bindings["DB"]): Promise<Device[]> {
+  const { results } = await db.prepare(`SELECT * FROM devices ORDER BY created_at DESC`).all<Device>();
+  return results ?? [];
+}
+
+export async function createJob(
+  db: Bindings["DB"],
+  mac: string,
+  osProfile: string,
+  hostname?: string
+): Promise<number> {
+  await upsertDevice(db, mac, hostname);
+  const { meta } = await db
+    .prepare(`INSERT INTO deployment_jobs (device_mac, os_profile) VALUES (?1, ?2)`)
+    .bind(mac, osProfile)
+    .run();
+  return meta.last_row_id as number;
+}
+
+export async function listJobs(db: Bindings["DB"]): Promise<DeploymentJob[]> {
+  const { results } = await db
+    .prepare(`SELECT * FROM deployment_jobs ORDER BY created_at DESC LIMIT 200`)
+    .all<DeploymentJob>();
+  return results ?? [];
+}
+
+export async function getPendingJobForMac(db: Bindings["DB"], mac: string): Promise<DeploymentJob | null> {
+  const job = await db
+    .prepare(
+      `SELECT * FROM deployment_jobs
+       WHERE device_mac = ?1 AND status IN ('pending', 'booted')
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .bind(mac)
+    .first<DeploymentJob>();
+  return job ?? null;
+}
+
+export async function updateLatestJobStatusForMac(
+  db: Bindings["DB"],
+  mac: string,
+  status: JobStatus,
+  log?: string
+): Promise<boolean> {
+  const job = await db
+    .prepare(
+      `SELECT id FROM deployment_jobs WHERE device_mac = ?1
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .bind(mac)
+    .first<{ id: number }>();
+  if (!job) return false;
+  await updateJobStatus(db, job.id, status, log);
+  return true;
+}
+
+export async function updateJobStatus(
+  db: Bindings["DB"],
+  id: number,
+  status: JobStatus,
+  log?: string
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE deployment_jobs SET status = ?2, log = COALESCE(?3, log), updated_at = datetime('now')
+       WHERE id = ?1`
+    )
+    .bind(id, status, log ?? null)
+    .run();
+}

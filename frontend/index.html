@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OS Deployment</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.4rem; }
+      section { margin-bottom: 2rem; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; }
+      form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+      input, select, button { padding: 0.4rem 0.6rem; }
+      .status-pending { color: #a66a00; }
+      .status-booted { color: #0066cc; }
+      .status-installing { color: #0066cc; }
+      .status-complete { color: #1a7f37; }
+      .status-failed { color: #cc0000; }
+      #error { color: #cc0000; }
+    </style>
+  </head>
+  <body>
+    <h1>OS Deployment</h1>
+    <p id="error"></p>
+
+    <section>
+      <h2>Start a deployment</h2>
+      <form id="deploy-form">
+        <input name="mac" placeholder="aa:bb:cc:dd:ee:ff" required pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" />
+        <input name="hostname" placeholder="hostname (optional)" />
+        <select name="os_profile" id="os-profile-select"></select>
+        <button type="submit">Queue reinstall</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Jobs</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>MAC</th><th>Profile</th><th>Status</th><th>Updated</th></tr>
+        </thead>
+        <tbody id="jobs-body"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Devices</h2>
+      <table>
+        <thead>
+          <tr><th>MAC</th><th>Hostname</th><th>Last seen</th></tr>
+        </thead>
+        <tbody id="devices-body"></tbody>
+      </table>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -601,6 +601,14 @@
               <input id="profile-wim-file" type="file" accept=".wim" />
               <button type="button" id="profile-wim-upload-btn" disabled>Upload</button>
             </div>
+          </div>
+          <div class="field field-wide">
+            <label for="profile-iso-file">Or extract install.wim from a Windows ISO</label>
+            <div class="upload-row">
+              <input id="profile-iso-file" type="file" accept=".iso" />
+              <button type="button" id="profile-iso-upload-btn" disabled>Extract &amp; upload</button>
+            </div>
+            <p class="hint">Reads the ISO's filesystem in your browser and uploads only install.wim/install.esd - the full ISO is never uploaded.</p>
             <div class="upload-progress" id="profile-wim-progress" hidden>
               <progress id="profile-wim-progress-bar" max="100" value="0"></progress>
               <span id="profile-wim-progress-text"></span>

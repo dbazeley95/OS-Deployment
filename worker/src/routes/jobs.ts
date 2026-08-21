@@ -1,41 +1,19 @@
 import { Hono } from "hono";
 import type { Bindings, JobStatus } from "../types";
-import { createJob, listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
-import { getProfile } from "../lib/profiles";
-import { getTaskSequence, listTaskSequences } from "../lib/taskSequences";
+import { listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const VALID_STATUSES: JobStatus[] = ["pending", "booted", "installing", "complete", "failed"];
 
+// A log of in-progress/complete deployments - there's no admin-side job
+// creation here on purpose. Every deployment starts on-device, via the
+// WinPE wizard (DeployGui.ps1) authenticating against /api/deploy/*; this
+// route only ever reads or corrects records that flow already created.
 export const jobsRoute = new Hono<{ Bindings: Bindings }>();
 
 jobsRoute.get("/", async (c) => {
   const jobs = await listJobs(c.env.DB);
   return c.json(jobs);
-});
-
-// Admin pre-staging: picks a task sequence (which carries its own OS
-// profile) rather than an OS profile directly - the technician still
-// authenticates at the machine, but skips the task-sequence prompt.
-jobsRoute.post("/", async (c) => {
-  const body = await c.req.json<{ mac?: string; task_sequence_id?: string; hostname?: string }>().catch(() => null);
-  if (!body?.mac || !MAC_RE.test(body.mac)) {
-    return c.json({ error: "mac is required and must look like aa:bb:cc:dd:ee:ff" }, 400);
-  }
-  const sequence = body.task_sequence_id ? await getTaskSequence(c.env.DB, body.task_sequence_id) : null;
-  if (!body.task_sequence_id || !sequence) {
-    const sequences = await listTaskSequences(c.env.DB);
-    return c.json({ error: `task_sequence_id must be one of: ${sequences.map((s) => s.id).join(", ")}` }, 400);
-  }
-  const profile = await getProfile(c.env.DB, sequence.osProfileId);
-  if (!profile) {
-    return c.json({ error: `task sequence ${sequence.id} references an unknown OS profile` }, 400);
-  }
-  const id = await createJob(c.env.DB, body.mac.toLowerCase(), profile.id, {
-    hostname: body.hostname,
-    taskSequenceId: sequence.id,
-  });
-  return c.json({ id }, 201);
 });
 
 // Phone-home endpoint for post-install scripts, which know their MAC but not
@@ -57,7 +35,8 @@ jobsRoute.patch("/by-mac/:mac", async (c) => {
   return c.json({ ok: true });
 });
 
-// Called by an admin to mark a job's status directly by its numeric id.
+// Manual correction of an existing job's status/log by its numeric id -
+// not a way to create or schedule a new deployment.
 jobsRoute.patch("/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) {

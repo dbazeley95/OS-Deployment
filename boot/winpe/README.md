@@ -27,10 +27,13 @@ sequences" section). This is the "modern Deployment Workbench" piece:
 adding a Windows edition, an app, or a new bundle of both is a form
 submission, not a code change + redeploy.
 
-If a job was already pre-staged via the admin UI, the hostname and task
-sequence prompts are skipped (shown read-only, pre-filled) - but the
-domain-join section is **always** shown fresh, pre-staged or not. That's
-deliberate: domain admin credentials are never sent to the Worker at all.
+The admin UI has no scheduling step - every job starts here, on the
+machine. The one prompt this wizard skips is on a **retry**: if this same
+MAC already has a booted, incomplete job, the hostname/task-sequence
+prompts are skipped (shown read-only, pre-filled) in favor of what was
+already decided - but the domain-join section is **always** shown fresh,
+retry or not. That's deliberate: domain admin credentials are never sent
+to the Worker at all.
 `DeployGui.ps1` collects them locally and writes them straight into
 `post-action.json` on the target disk; only the domain *name* (not the
 username/password) is recorded on the job, for audit. `PostAction.ps1`

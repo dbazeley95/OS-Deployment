@@ -309,7 +309,7 @@
       <header>
         <div>
           <h1>OS Deployment <span id="version-badge" class="version-badge" title="Build version"></span></h1>
-          <p>Queue Windows reinstalls and track them through to completion.</p>
+          <p>Deployment catalog editor and job log - reinstalls are always started on-device.</p>
         </div>
         <button id="logout-btn" type="button" hidden>Log out</button>
       </header>
@@ -333,27 +333,8 @@
 
       <div id="app" hidden>
       <section class="card">
-        <h2>Start a deployment</h2>
-        <form id="deploy-form">
-          <div class="field">
-            <label for="mac">MAC address</label>
-            <input id="mac" name="mac" placeholder="aa:bb:cc:dd:ee:ff" required
-                   pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$" />
-          </div>
-          <div class="field">
-            <label for="hostname">Hostname (optional)</label>
-            <input id="hostname" name="hostname" placeholder="e.g. desk-042" />
-          </div>
-          <div class="field">
-            <label for="task-sequence-select">Task sequence</label>
-            <select name="task_sequence_id" id="task-sequence-select"></select>
-          </div>
-          <button type="submit">Queue reinstall</button>
-        </form>
-      </section>
-
-      <section class="card">
         <h2>Jobs</h2>
+        <p class="hint">Deployments are always started on-device (the WinPE wizard) - this is a log, not a scheduler.</p>
         <table>
           <thead>
             <tr><th>ID</th><th>MAC</th><th>Task sequence</th><th>Status</th><th>Domain join</th><th>Technician</th><th>Updated</th></tr>

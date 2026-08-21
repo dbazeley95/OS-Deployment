@@ -46,7 +46,7 @@ bootRoute.get("/:mac", async (c) => {
 });
 
 // Reached from the boot menu once a technician picks a profile for a MAC
-// with no pre-staged job. Same auth as /:mac.
+// with no existing job. Same auth as /:mac.
 bootRoute.get("/:mac/install", async (c) => {
   const mac = c.req.param("mac").toLowerCase();
   if (!MAC_RE.test(mac)) {

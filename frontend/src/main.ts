@@ -13,8 +13,6 @@ const loginForm = document.querySelector<HTMLFormElement>("#login-form")!;
 
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body")!;
 const devicesBody = document.querySelector<HTMLElement>("#devices-body")!;
-const taskSequenceSelect = document.querySelector<HTMLSelectElement>("#task-sequence-select")!;
-const deployForm = document.querySelector<HTMLFormElement>("#deploy-form")!;
 
 const profilesBody = document.querySelector<HTMLElement>("#profiles-body")!;
 const profileForm = document.querySelector<HTMLFormElement>("#profile-form")!;
@@ -50,11 +48,6 @@ function showError(err: unknown) {
 
 function emptyRow(colspan: number, message: string): string {
   return `<tr><td colspan="${colspan}" class="empty">${message}</td></tr>`;
-}
-
-async function loadTaskSequenceOptions() {
-  const sequences = await api.listCatalogTaskSequences();
-  taskSequenceSelect.innerHTML = sequences.map((s) => `<option value="${s.id}">${s.label}</option>`).join("");
 }
 
 async function loadJobs() {
@@ -192,7 +185,6 @@ async function refresh() {
       loadDevices(),
       loadProfilesTable(),
       loadAppsTable(),
-      loadTaskSequenceOptions(),
       loadTsProfileOptions(),
       loadTsStepOptions(),
       loadTaskSequencesTable(),
@@ -227,23 +219,6 @@ function resetTaskSequenceForm() {
   tsSubmitBtn.textContent = "Add task sequence";
   tsCancelBtn.hidden = true;
 }
-
-deployForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  errorEl.textContent = "";
-  const data = new FormData(deployForm);
-  try {
-    await api.createJob(
-      String(data.get("mac")),
-      String(data.get("task_sequence_id")),
-      (data.get("hostname") as string) || undefined
-    );
-    deployForm.reset();
-    await refresh();
-  } catch (err) {
-    showError(err);
-  }
-});
 
 profileForm.addEventListener("submit", async (e) => {
   e.preventDefault();

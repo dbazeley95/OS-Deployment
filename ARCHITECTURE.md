@@ -47,7 +47,7 @@ Everything past that first local hop is cloud-hosted, for either path.
 
 | Layer | Where | What |
 |---|---|---|
-| Admin UI | Cloudflare Pages | Log in as a technician; register devices, queue a reinstall by task sequence, watch job status; manage the OS profile/app/task-sequence catalog |
+| Admin UI | Cloudflare Pages | Log in as a technician; a read-only log of in-progress/complete deployments and devices, plus the OS profile/app/task-sequence catalog editor - no job scheduling, every deployment starts on-device |
 | Auth API | Cloudflare Workers | `/api/auth/*` — technician login/logout, issues the admin UI's session cookie |
 | Catalog API | Cloudflare Workers | `/api/catalog/*` — CRUD for OS profiles, apps, and task sequences (D1-backed), behind the session login - the "cloud Deployment Workbench" |
 | Deploy API | Cloudflare Workers | `/api/deploy/*` — JSON API the WinPE `DeployGui.ps1` script calls for technician auth, hostname/domain-join/task-sequence selection, and image/answer-file URLs (never domain-join credentials - those stay device-local) |
@@ -61,19 +61,24 @@ Everything past that first local hop is cloud-hosted, for either path.
 
 ### WinPE path (primary)
 
-An admin can pre-stage a job via the UI (a hostname and a task sequence),
-or a technician can boot a machine cold (WDS or USB) and enter everything
-on the spot via a real Windows Forms GUI (`DeployGui.ps1`, fetched fresh
-from R2 on every boot - not baked into the image). Either way, the GUI
-authenticates against the same `technicians` D1 table as the iPXE path
-below, just over a plain JSON API instead of HTTP Basic Auth (a WinPE
-script doesn't get that prompt for free the way iPXE does), and its
+There's no admin-side scheduling anywhere in this system - every
+deployment starts on the machine itself. A technician boots it cold (WDS
+or USB) and enters everything on the spot via a real Windows Forms GUI
+(`DeployGui.ps1`, fetched fresh from R2 on every boot - not baked into the
+image), which authenticates against the same `technicians` D1 table as
+the iPXE path below, just over a plain JSON API instead of HTTP Basic Auth
+(a WinPE script doesn't get that prompt for free the way iPXE does). Its
 task-sequence dropdown is whatever's currently in the D1-backed catalog
-(managed via the admin UI's own login-gated `/api/catalog/*`, not code).
+(managed via the admin UI's own login-gated `/api/catalog/*`, not code) -
+the admin UI's job is that catalog editor plus a read-only log of jobs,
+nothing more.
 
-Domain-join is the one exception to "whatever was pre-staged is skipped" -
-it's always confirmed fresh in the wizard, pre-staged or not, because the
-join **username/password are never sent to the Worker at all**.
+The one case the wizard skips a prompt is a **retry**: if this same
+machine already got partway through a deployment (booted but not yet
+complete), the hostname/task-sequence prompts are skipped in favor of
+what was already decided. Domain-join is never skipped this way, even on
+a retry - it's always confirmed fresh, because the join
+**username/password are never sent to the Worker at all**.
 `DeployGui.ps1` collects them locally and writes them straight into the
 target disk's `post-action.json`; only the domain *name* travels to D1,
 for audit.
@@ -90,12 +95,12 @@ sequenceDiagram
     Target->>Tech: DeployGui.ps1 shows a login window
     Tech->>Target: enters credentials
     Target->>Worker: POST /api/deploy/auth {mac, username, password}
-    Worker->>D1: verify technician; look up pending job for mac
+    Worker->>D1: verify technician; look up in-progress job for mac
 
-    alt no pre-staged job
+    alt no in-progress job for this mac
         Worker-->>Target: status=choose, task sequence catalog (D1-backed)
         Target->>Tech: shows hostname + domain-join + task-sequence form
-    else job pre-staged via admin UI (hostname + task sequence)
+    else retry - this mac already has a booted, incomplete job
         Worker-->>Target: status=ready, hostname, taskSequenceId
         Target->>Tech: shows domain-join form only (hostname/task sequence read-only)
     end
@@ -132,12 +137,12 @@ sequenceDiagram
     Target->>Worker: retries with Basic Auth
     Worker->>D1: verify technician; look up pending job for mac
 
-    alt no pre-staged job
+    alt no in-progress job for this mac
         Worker-->>Target: iPXE menu (profile choices)
         Target->>Tech: technician picks a profile
         Target->>Worker: chain /boot/<mac>/install?profile=... (cached auth)
         Worker->>D1: create job (status=booted, technician=...)
-    else job already pre-staged via admin UI
+    else retry - this mac already has a booted, incomplete job
         Worker->>D1: mark booted, record confirming technician
     end
 
@@ -166,10 +171,10 @@ boot/profiles/     Per-OS unattended-install answer files, shared by both paths
   (`worker/src/lib/auth.ts` / `verifyTechnicianCredentials`), so any
   technician with valid credentials can trigger a reinstall on **any** MAC
   that boots the WinPE image or PXE-boots — not just pre-registered ones.
-  That's the point (self-service, no admin bottleneck), but it means the
-  real safety boundary is who holds valid technician credentials and which
-  machines can reach your deployment infrastructure at all, not the admin
-  UI's pre-staging step.
+  That's the point (self-service, no admin bottleneck, no scheduling step
+  to bypass) - the real safety boundary is who holds valid technician
+  credentials and which machines can reach your deployment infrastructure
+  at all.
 - `/api/devices`, `/api/jobs`, and `/api/catalog/*` (the admin UI's own
   REST API) require a technician login (`/api/auth/login`, an
   `HttpOnly`/`Secure`/`SameSite=Strict` session cookie signed with the

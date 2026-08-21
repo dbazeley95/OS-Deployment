@@ -92,10 +92,12 @@ function Show-LoginForm {
 }
 
 # --- Step 2: hostname / domain-join / task sequence selection ------------
-# Hostname and task sequence are skipped (shown read-only) if a job was
-# already pre-staged via the admin UI (status "ready"). Domain-join is
-# always confirmed fresh here regardless - the join credentials are never
-# known to the cloud, so there's nothing to pre-stage for them anyway.
+# Hostname and task sequence are skipped (shown read-only) if this MAC
+# already has an in-progress job (status "ready" - e.g. a retry after this
+# same machine got partway through a previous boot). Domain-join is always
+# confirmed fresh here regardless - the join credentials are never known
+# to the cloud, so there's nothing to reuse there anyway. There's no admin
+# job-scheduling step anywhere in this system - every job starts here.
 
 function Show-SelectionForm {
     param($AuthResponse)
@@ -390,8 +392,9 @@ while ($true) {
     }
 
     # Domain-join credentials are never known to the cloud (see deploy.ts),
-    # so this form is always shown, even for a fully pre-staged job - it
-    # just pre-fills/disables whatever was already decided.
+    # so this form is always shown, even when this MAC already has an
+    # in-progress job - it just pre-fills/disables whatever was already
+    # decided on a previous boot.
     $selection = Show-SelectionForm -AuthResponse $auth
     if (-not $selection) { continue }
 

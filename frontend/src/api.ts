@@ -79,14 +79,9 @@ export const api = {
     request<{ username: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
 
-  // Devices / jobs
+  // Devices / jobs (read-only - deployments are always started on-device via DeployGui.ps1)
   listDevices: () => request<Device[]>("/api/devices"),
   listJobs: () => request<DeploymentJob[]>("/api/jobs"),
-  createJob: (mac: string, task_sequence_id: string, hostname?: string) =>
-    request<{ id: number }>("/api/jobs", {
-      method: "POST",
-      body: JSON.stringify({ mac, task_sequence_id, hostname }),
-    }),
 
   // Catalog editor ("cloud Deployment Workbench")
   listCatalogProfiles: () => request<OsProfile[]>("/api/catalog/profiles"),

@@ -86,10 +86,12 @@ export async function updateLatestJobStatusForMac(
 
 /**
  * Reuses a pending/booted job for this MAC+profile if one already exists
- * (e.g. pre-staged via the admin UI), otherwise creates one - then marks it
- * booted either way. Shared by /boot/:mac/install (worker/src/routes/boot.ts)
- * and the JSON deploy API (worker/src/routes/deploy.ts) so both entry
- * points behave identically.
+ * (e.g. a retry after this same machine got partway through a previous
+ * boot), otherwise creates one - then marks it booted either way. Shared
+ * by /boot/:mac/install (worker/src/routes/boot.ts) and the JSON deploy
+ * API (worker/src/routes/deploy.ts) so both entry points behave
+ * identically. There's no admin-side job creation - every job originates
+ * on-device.
  */
 export async function resolveOrCreateJob(
   db: Bindings["DB"],

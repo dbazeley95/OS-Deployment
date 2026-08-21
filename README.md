@@ -36,9 +36,9 @@ diagram of a deployment end to end.
   route, generates a per-machine iPXE script from D1 job state), and
   `/images/*`, which streams WIMs/answer files/scripts out of R2.
 - `frontend/` — Cloudflare Pages: admin UI, gated behind a technician
-  login — register devices, pick a task sequence, queue a reinstall,
-  watch job status (including domain-join and which technician triggered
-  it), and manage the OS profile/app/task-sequence catalog.
+  login — the OS profile/app/task-sequence catalog editor, plus a
+  read-only log of devices and jobs (status, domain-join, which technician
+  triggered it). No job scheduling - every deployment starts on-device.
 - `boot/winpe/` — the primary deployment path: build instructions for the
   signed WinPE image, `DeployGui.ps1` (the Forms GUI, fetched fresh from
   R2 on every boot - not baked into the image), `PostAction.ps1` (runs at
@@ -152,30 +152,29 @@ custom `ipxe.efi` won't run with Secure Boot enabled.)
 
 ## Using it
 
-Log in to the admin UI with a technician account (see 3b above) to
-register devices, pre-stage a reinstall, watch job status, and manage the
-OS profile/app/task-sequence catalog.
+Log in to the admin UI with a technician account (see 3b above) to manage
+the OS profile/app/task-sequence catalog and watch the job log. There's no
+scheduling step here on purpose - every deployment starts on the machine
+itself.
 
 Boot the target machine from the WinPE image (network boot via WDS, or the
 USB stick). A GUI window (`DeployGui.ps1`, fetched fresh from R2 - always
 reflects the current catalog) prompts for technician credentials, a
 hostname, whether to join a domain (and if so, the domain name plus admin
-credentials), and a task sequence to install - or picks up whatever was
-already queued from the admin UI (domain-join is always confirmed fresh
-regardless, since credentials are never known to the cloud). It applies
-the image with a live progress log; at first logon, the generalized
-`PostAction.ps1` joins the domain non-interactively (no prompt - the
-wizard already collected everything) and runs the task sequence's steps
-in order.
+credentials, never sent to the cloud), and a task sequence to install. It
+applies the image with a live progress log; at first logon, the
+generalized `PostAction.ps1` joins the domain non-interactively (no
+prompt - the wizard already collected everything) and runs the task
+sequence's steps in order.
 
-Pre-staging (optional): in the admin UI, enter a target machine's MAC
-address, pick a task sequence, click "Queue reinstall" ahead of time — the
-technician still authenticates at boot and still confirms domain-join, but
-skips the hostname/task-sequence prompts.
+The one prompt that's skipped is on a **retry**: if the same machine
+already got partway through a deployment, the hostname/task-sequence
+questions are skipped in favor of what was already chosen - domain-join is
+always re-confirmed regardless, since credentials are never persisted.
 
-Either way, watch the job flip from `pending` -> `booted` -> `complete` in
-the UI, along with which technician triggered it, the task sequence used,
-and whether it joined a domain.
+Watch the job flip from `pending` -> `booted` -> `complete` in the admin
+UI's log, along with which technician triggered it, the task sequence
+used, and whether it joined a domain.
 
 ## Security
 

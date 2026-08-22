@@ -692,11 +692,120 @@
         margin-bottom: 0.5rem;
       }
 
+      .help-guide-dialog {
+        width: min(720px, 92vw);
+      }
+
+      .help-guide-body {
+        max-height: 65vh;
+        overflow-y: auto;
+        margin: var(--space-4) -0.25rem 0;
+        padding: 0 0.25rem;
+      }
+
+      .help-section {
+        margin-bottom: var(--space-6);
+      }
+
+      .help-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .help-section h3 {
+        font-size: 0.95rem;
+        font-weight: 650;
+        margin: 0 0 0.4rem;
+      }
+
+      .help-section p {
+        margin: 0 0 var(--space-3);
+        font-size: 0.9rem;
+        color: var(--text-muted);
+      }
+
+      .help-section code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.85em;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.05rem 0.3rem;
+      }
+
+      .help-section img {
+        display: block;
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-sm);
+      }
+
 
       .header-actions {
         display: flex;
         gap: 0.5rem;
         align-items: start;
+      }
+
+      .settings-wrap {
+        position: relative;
+      }
+
+      .btn-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.55rem;
+        line-height: 0;
+      }
+
+      .settings-menu[hidden] {
+        display: none;
+      }
+
+      .settings-menu {
+        position: absolute;
+        top: calc(100% + var(--space-2));
+        right: 0;
+        z-index: 50;
+        min-width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        padding: 0.4rem;
+      }
+
+      .settings-menu-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        color: var(--text);
+        border: 1px solid transparent;
+        font-weight: 500;
+        padding: 0.5rem 0.65rem;
+      }
+
+      .settings-menu-item:hover {
+        background: var(--surface-2);
+      }
+
+      .settings-menu-item#menu-logout {
+        color: var(--status-failed-text);
+      }
+
+      .settings-menu-item#menu-logout:hover {
+        background: var(--status-failed-bg);
+      }
+
+      .settings-menu-divider {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 0.3rem 0.1rem;
       }
 
       /*
@@ -719,12 +828,37 @@
     <main>
       <header>
         <div>
-          <h1 title="Windows Installation Provisioning Engine">W.I.P.E <button type="button" id="version-badge" class="version-badge" title="Click for release notes"></button></h1>
+          <h1 title="Windows Installation Provisioning Engine">W.I.P.E <span id="version-badge" class="version-badge"></span></h1>
           <p>Windows Installation Provisioning Engine - deployment catalog editor and job log, reinstalls are always started on-device.</p>
         </div>
         <div class="header-actions">
-          <button id="change-password-btn" type="button" class="btn-secondary" hidden>Change my password</button>
-          <button id="logout-btn" type="button" class="btn-secondary" hidden>Log out</button>
+          <div class="settings-wrap" id="settings-wrap" hidden>
+            <button
+              type="button"
+              id="settings-btn"
+              class="btn-secondary btn-icon"
+              aria-haspopup="true"
+              aria-expanded="false"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path
+                  d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+                />
+              </svg>
+            </button>
+            <div id="settings-menu" class="settings-menu" hidden role="menu">
+              <button type="button" id="menu-help-guide" class="settings-menu-item" role="menuitem">Help guide</button>
+              <button type="button" id="menu-release-notes" class="settings-menu-item" role="menuitem">Release notes</button>
+              <button type="button" id="menu-change-password" class="settings-menu-item" role="menuitem">Change my password</button>
+              <hr class="settings-menu-divider" />
+              <button type="button" id="menu-logout" class="settings-menu-item" role="menuitem">Log out</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1098,6 +1232,80 @@
             <button type="button" id="change-password-cancel" class="btn-secondary">Cancel</button>
           </div>
         </form>
+      </dialog>
+
+      <dialog id="help-guide-dialog" class="help-guide-dialog">
+        <h2>Help guide</h2>
+        <p class="hint">A tour of each tab - what it's for and how to use it.</p>
+        <div class="help-guide-body">
+          <section class="help-section">
+            <h3>Dashboard</h3>
+            <p>
+              At-a-glance counters for jobs currently in progress, complete, and failed, plus the full job log below
+              them. This is a log, not a scheduler - every reinstall is always started on the device itself, from the
+              WinPE wizard.
+            </p>
+            <img src="/help/dashboard.png" alt="Dashboard tab showing status counters and the job log" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>Devices</h3>
+            <p>
+              Every device that has ever phoned in, with its last-known hostname and serial number. Click "View
+              history" on a device to see its full job history, not just the latest snapshot.
+            </p>
+            <img src="/help/devices.png" alt="Devices tab with a device's expanded job history" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>OS Profiles</h3>
+            <p>
+              The catalog the WinPE deployment wizard offers a technician on-device. Each profile pairs an
+              install.wim (upload one directly, or extract it straight from a Windows ISO in your browser - the ISO
+              itself is never uploaded) with an image index and an answer file.
+            </p>
+            <img src="/help/profiles.png" alt="OS Profiles tab with the add-profile panel and catalog table" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>Answer Files</h3>
+            <p>
+              Generated <code>unattend.xml</code> files an OS profile can pick from - built with a step-by-step
+              wizard (UI language, time zone, registered owner, product key, whether to skip OOBE prompts) instead of
+              hand-authoring XML or typing an R2 key that may not exist.
+            </p>
+            <img src="/help/answer-files.png" alt="Answer Files tab with the new-answer-file button and catalog table" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>Apps</h3>
+            <p>An installer or script (msi/exe/script) usable as a step in a task sequence.</p>
+            <img src="/help/apps.png" alt="Apps tab with the add-app panel and catalog table" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>Task Sequences</h3>
+            <p>
+              Bundles one OS profile with an ordered list of steps - app installs and built-in actions (like
+              installing Windows updates or disabling WinRE) - that the WinPE wizard runs after imaging.
+            </p>
+            <img src="/help/task-sequences.png" alt="Task Sequences tab with the new-task-sequence button and catalog table" loading="lazy" />
+          </section>
+
+          <section class="help-section">
+            <h3>Users &amp; roles</h3>
+            <p>
+              Every admin-UI account has one of three roles: <strong>Admin</strong> (full control, including managing
+              other users), <strong>Technician</strong> (can create/edit the catalog above but not delete anything or
+              manage other users), and <strong>Beginner</strong> (read-only). Anyone can change their own password
+              from this menu regardless of role.
+            </p>
+            <img src="/help/users.png" alt="Users tab with the add-user panel and account table" loading="lazy" />
+          </section>
+        </div>
+        <div class="wizard-nav">
+          <button type="button" id="help-guide-close" class="btn-secondary">Close</button>
+        </div>
       </dialog>
     </main>
 

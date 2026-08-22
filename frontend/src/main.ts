@@ -14,16 +14,17 @@ import {
 import { findWindowsWimInIso } from "./iso";
 import { generateAnswerFile } from "./answerFile";
 
-const versionBadge = document.querySelector<HTMLButtonElement>("#version-badge")!;
+const versionBadge = document.querySelector<HTMLElement>("#version-badge")!;
 const releaseNotesDialog = document.querySelector<HTMLDialogElement>("#release-notes-dialog")!;
 const releaseNotesVersion = document.querySelector<HTMLElement>("#release-notes-version")!;
 const releaseNotesList = document.querySelector<HTMLUListElement>("#release-notes-list")!;
 const releaseNotesCloseBtn = document.querySelector<HTMLButtonElement>("#release-notes-close")!;
+const helpGuideDialog = document.querySelector<HTMLDialogElement>("#help-guide-dialog")!;
+const helpGuideCloseBtn = document.querySelector<HTMLButtonElement>("#help-guide-close")!;
 
 const appVersion = import.meta.env.VITE_APP_VERSION;
 const commitSha = import.meta.env.VITE_COMMIT_SHA;
 versionBadge.textContent = appVersion || "dev";
-versionBadge.title = "Click for release notes";
 
 // Baked in at build time (see .github/workflows/deploy-pages.yml) as the
 // subjects of the most recent commits to main - since every PR ships as one
@@ -36,7 +37,7 @@ const releaseNotes: string[] = (() => {
   }
 })();
 
-versionBadge.addEventListener("click", () => {
+function openReleaseNotes() {
   releaseNotesVersion.textContent = appVersion
     ? `Build ${appVersion}${commitSha ? ` (${commitSha.slice(0, 7)})` : ""}`
     : "Local dev build";
@@ -44,13 +45,20 @@ versionBadge.addEventListener("click", () => {
     ? releaseNotes.map((note) => `<li>${note}</li>`).join("")
     : '<li class="empty">No release notes available.</li>';
   releaseNotesDialog.showModal();
-});
+}
 releaseNotesCloseBtn.addEventListener("click", () => releaseNotesDialog.close());
+helpGuideCloseBtn.addEventListener("click", () => helpGuideDialog.close());
 
 const errorEl = document.querySelector<HTMLElement>("#error")!;
 const loginCard = document.querySelector<HTMLElement>("#login-card")!;
 const appEl = document.querySelector<HTMLElement>("#app")!;
-const logoutBtn = document.querySelector<HTMLButtonElement>("#logout-btn")!;
+const settingsWrap = document.querySelector<HTMLElement>("#settings-wrap")!;
+const settingsBtn = document.querySelector<HTMLButtonElement>("#settings-btn")!;
+const settingsMenu = document.querySelector<HTMLElement>("#settings-menu")!;
+const menuHelpGuideBtn = document.querySelector<HTMLButtonElement>("#menu-help-guide")!;
+const menuReleaseNotesBtn = document.querySelector<HTMLButtonElement>("#menu-release-notes")!;
+const menuChangePasswordBtn = document.querySelector<HTMLButtonElement>("#menu-change-password")!;
+const menuLogoutBtn = document.querySelector<HTMLButtonElement>("#menu-logout")!;
 const loginForm = document.querySelector<HTMLFormElement>("#login-form")!;
 
 const tabsNav = document.querySelector<HTMLElement>("#tabs")!;
@@ -134,7 +142,6 @@ const userRoleSelect = document.querySelector<HTMLSelectElement>("#user-role")!;
 const userSubmitBtn = document.querySelector<HTMLButtonElement>("#user-submit")!;
 const userCancelBtn = document.querySelector<HTMLButtonElement>("#user-cancel")!;
 
-const changePasswordBtn = document.querySelector<HTMLButtonElement>("#change-password-btn")!;
 const changePasswordDialog = document.querySelector<HTMLDialogElement>("#change-password-dialog")!;
 const changePasswordForm = document.querySelector<HTMLFormElement>("#change-password-form")!;
 const changePasswordNewInput = document.querySelector<HTMLInputElement>("#change-password-new")!;
@@ -1113,7 +1120,38 @@ usersBody.addEventListener("click", async (e) => {
   }
 });
 
-changePasswordBtn.addEventListener("click", () => {
+function closeSettingsMenu() {
+  settingsMenu.hidden = true;
+  settingsBtn.setAttribute("aria-expanded", "false");
+}
+
+settingsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const willOpen = settingsMenu.hidden;
+  settingsMenu.hidden = !willOpen;
+  settingsBtn.setAttribute("aria-expanded", String(willOpen));
+});
+
+document.addEventListener("click", (e) => {
+  if (!settingsMenu.hidden && !settingsWrap.contains(e.target as Node)) closeSettingsMenu();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !settingsMenu.hidden) closeSettingsMenu();
+});
+
+menuHelpGuideBtn.addEventListener("click", () => {
+  closeSettingsMenu();
+  helpGuideDialog.showModal();
+});
+
+menuReleaseNotesBtn.addEventListener("click", () => {
+  closeSettingsMenu();
+  openReleaseNotes();
+});
+
+menuChangePasswordBtn.addEventListener("click", () => {
+  closeSettingsMenu();
   changePasswordForm.reset();
   changePasswordError.textContent = "";
   changePasswordDialog.showModal();
@@ -1140,16 +1178,15 @@ function showLoggedIn() {
   document.body.classList.remove("login-screen");
   loginCard.hidden = true;
   appEl.hidden = false;
-  logoutBtn.hidden = false;
-  changePasswordBtn.hidden = false;
+  settingsWrap.hidden = false;
 }
 
 function showLoggedOut() {
   document.body.classList.add("login-screen");
   loginCard.hidden = false;
   appEl.hidden = true;
-  logoutBtn.hidden = true;
-  changePasswordBtn.hidden = true;
+  settingsWrap.hidden = true;
+  closeSettingsMenu();
   currentUsername = null;
   currentRole = null;
 }
@@ -1171,7 +1208,8 @@ loginForm.addEventListener("submit", async (e) => {
   }
 });
 
-logoutBtn.addEventListener("click", async () => {
+menuLogoutBtn.addEventListener("click", async () => {
+  closeSettingsMenu();
   try {
     await api.logout();
   } catch (err) {

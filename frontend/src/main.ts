@@ -1,6 +1,8 @@
 import {
   api,
   ApiError,
+  type AnswerFile,
+  type AnswerFileOptions,
   type AppEntry,
   type BuiltinAction,
   type DeploymentJob,
@@ -75,11 +77,28 @@ const profileIsoUploadBtn = document.querySelector<HTMLButtonElement>("#profile-
 const profileWimProgress = document.querySelector<HTMLElement>("#profile-wim-progress")!;
 const profileWimProgressBar = document.querySelector<HTMLProgressElement>("#profile-wim-progress-bar")!;
 const profileWimProgressText = document.querySelector<HTMLElement>("#profile-wim-progress-text")!;
-const profileAnswerFileInput = document.querySelector<HTMLInputElement>("#profile-answer-file")!;
-const profileAnswerUiLangInput = document.querySelector<HTMLInputElement>("#profile-answer-uilang")!;
-const profileAnswerProductKeyInput = document.querySelector<HTMLInputElement>("#profile-answer-productkey")!;
-const profileAnswerGenerateBtn = document.querySelector<HTMLButtonElement>("#profile-answer-generate-btn")!;
-const profileAnswerStatus = document.querySelector<HTMLElement>("#profile-answer-status")!;
+const profileAnswerFileSelect = document.querySelector<HTMLSelectElement>("#profile-answer-file")!;
+
+const answerFilesBody = document.querySelector<HTMLElement>("#answer-files-body")!;
+const afNewBtn = document.querySelector<HTMLButtonElement>("#af-new-btn")!;
+const afWizard = document.querySelector<HTMLDialogElement>("#af-wizard")!;
+const afWizardTitle = document.querySelector<HTMLElement>("#af-wizard-title")!;
+const afWizardStepLabel = document.querySelector<HTMLElement>("#af-wizard-step-label")!;
+const afWizardSteps = Array.from(afWizard.querySelectorAll<HTMLElement>(".wizard-step"));
+const answerFileForm = document.querySelector<HTMLFormElement>("#answer-file-form")!;
+const afIdInput = document.querySelector<HTMLInputElement>("#af-id")!;
+const afLabelInput = document.querySelector<HTMLInputElement>("#af-label")!;
+const afUiLanguageInput = document.querySelector<HTMLInputElement>("#af-uilanguage")!;
+const afTimeZoneInput = document.querySelector<HTMLInputElement>("#af-timezone")!;
+const afOwnerInput = document.querySelector<HTMLInputElement>("#af-owner")!;
+const afOrgInput = document.querySelector<HTMLInputElement>("#af-org")!;
+const afProductKeyInput = document.querySelector<HTMLInputElement>("#af-productkey")!;
+const afSkipOobeInput = document.querySelector<HTMLInputElement>("#af-skipoobe")!;
+const afReview = document.querySelector<HTMLElement>("#af-review")!;
+const afBackBtn = document.querySelector<HTMLButtonElement>("#af-back-btn")!;
+const afNextBtn = document.querySelector<HTMLButtonElement>("#af-next-btn")!;
+const afSubmitBtn = document.querySelector<HTMLButtonElement>("#af-submit")!;
+const afCancelBtn = document.querySelector<HTMLButtonElement>("#af-cancel")!;
 
 const appsBody = document.querySelector<HTMLElement>("#apps-body")!;
 const appForm = document.querySelector<HTMLFormElement>("#app-form")!;
@@ -109,10 +128,13 @@ const tsCancelBtn = document.querySelector<HTMLButtonElement>("#ts-cancel")!;
 let editingProfileId: string | null = null;
 let editingAppId: string | null = null;
 let editingTaskSequenceId: string | null = null;
+let editingAnswerFileId: string | null = null;
 let currentSteps: TaskSequenceStep[] = [];
 let stepLabels: Record<string, string> = {};
 let wizardStep = 1;
 const WIZARD_STEP_COUNT = 3;
+let afWizardStep = 1;
+const AF_WIZARD_STEP_COUNT = 3;
 const expandedDeviceMacs = new Set<string>();
 
 function stepKey(step: TaskSequenceStep): string {
@@ -257,6 +279,38 @@ async function loadTsProfileOptions() {
   tsProfileSelect.innerHTML = profiles.map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
 }
 
+async function loadAnswerFileSelectOptions() {
+  const answerFiles = await api.listCatalogAnswerFiles();
+  profileAnswerFileSelect.innerHTML = answerFiles
+    .map((a) => `<option value="${a.r2Key}">${a.label}</option>`)
+    .join("");
+}
+
+function answerFileOptionsSummary(o: AnswerFileOptions): string {
+  const bits = [o.uiLanguage, o.timeZone, o.productKey ? "product key set" : null, o.skipOobe ? "skips OOBE" : null];
+  return bits.filter(Boolean).join(", ");
+}
+
+async function loadAnswerFilesTable() {
+  const answerFiles = await api.listCatalogAnswerFiles();
+  answerFilesBody.innerHTML = answerFiles.length
+    ? answerFiles
+        .map(
+          (a) => `<tr>
+            <td class="mono">${a.id}</td>
+            <td>${a.label}</td>
+            <td>${answerFileOptionsSummary(a.options)}</td>
+            <td class="mono">${a.r2Key}</td>
+            <td class="row-actions">
+              <button type="button" data-edit-af="${a.id}">Edit</button>
+              <button type="button" class="danger" data-delete-af="${a.id}">Delete</button>
+            </td>
+          </tr>`
+        )
+        .join("")
+    : emptyRow(5, "No answer files yet.");
+}
+
 async function loadTsStepOptions() {
   const [apps, builtins] = await Promise.all([api.listCatalogApps(), api.listCatalogBuiltinActions()]);
   stepLabels = {
@@ -328,6 +382,8 @@ async function refresh() {
       loadTsProfileOptions(),
       loadTsStepOptions(),
       loadTaskSequencesTable(),
+      loadAnswerFileSelectOptions(),
+      loadAnswerFilesTable(),
     ]);
   } catch (err) {
     showError(err);
@@ -344,7 +400,6 @@ function resetProfileForm() {
   profileIsoUploadBtn.disabled = true;
   profileWimProgress.hidden = true;
   profileWimProgressBar.value = 0;
-  profileAnswerStatus.textContent = "";
 }
 
 function resetAppForm() {
@@ -399,6 +454,56 @@ function openTaskSequenceWizard(sequence?: TaskSequence) {
   renderStepsList();
   showWizardStep(1);
   tsWizard.showModal();
+}
+
+function renderAnswerFileWizardReview() {
+  afReview.innerHTML = `
+    <dl>
+      <dt>ID</dt><dd class="mono">${afIdInput.value}</dd>
+      <dt>Label</dt><dd>${afLabelInput.value}</dd>
+      <dt>UI language / locale</dt><dd>${afUiLanguageInput.value}</dd>
+      <dt>Time zone</dt><dd>${afTimeZoneInput.value || "—"}</dd>
+      <dt>Registered owner</dt><dd>${afOwnerInput.value || "—"}</dd>
+      <dt>Registered organization</dt><dd>${afOrgInput.value || "—"}</dd>
+      <dt>Product key</dt><dd>${afProductKeyInput.value || "—"}</dd>
+      <dt>Skip OOBE prompts</dt><dd>${afSkipOobeInput.checked ? "Yes" : "No"}</dd>
+    </dl>
+  `;
+}
+
+function showAnswerFileWizardStep(step: number) {
+  afWizardStep = step;
+  for (const el of afWizardSteps) {
+    el.hidden = Number(el.dataset.wizardStep) !== step;
+  }
+  afWizardStepLabel.textContent = `Step ${step} of ${AF_WIZARD_STEP_COUNT} - ${["Basics", "Options", "Review"][step - 1]}`;
+  afBackBtn.hidden = step === 1;
+  afNextBtn.hidden = step === AF_WIZARD_STEP_COUNT;
+  afSubmitBtn.hidden = step !== AF_WIZARD_STEP_COUNT;
+  if (step === AF_WIZARD_STEP_COUNT) renderAnswerFileWizardReview();
+}
+
+function openAnswerFileWizard(answerFile?: AnswerFile) {
+  answerFileForm.reset();
+  editingAnswerFileId = answerFile?.id ?? null;
+  afIdInput.disabled = Boolean(answerFile);
+  afWizardTitle.textContent = answerFile ? "Edit answer file" : "New answer file";
+  afSubmitBtn.textContent = answerFile ? "Save answer file" : "Add answer file";
+  if (answerFile) {
+    afIdInput.value = answerFile.id;
+    afLabelInput.value = answerFile.label;
+    afUiLanguageInput.value = answerFile.options.uiLanguage;
+    afTimeZoneInput.value = answerFile.options.timeZone;
+    afOwnerInput.value = answerFile.options.registeredOwner;
+    afOrgInput.value = answerFile.options.registeredOrganization;
+    afProductKeyInput.value = answerFile.options.productKey;
+    afSkipOobeInput.checked = answerFile.options.skipOobe;
+  } else {
+    afUiLanguageInput.value = "en-US";
+    afSkipOobeInput.checked = true;
+  }
+  showAnswerFileWizardStep(1);
+  afWizard.showModal();
 }
 
 profileForm.addEventListener("submit", async (e) => {
@@ -652,29 +757,70 @@ profileIsoUploadBtn.addEventListener("click", async () => {
   }
 });
 
-profileAnswerGenerateBtn.addEventListener("click", async () => {
-  const profileId = profileIdInput.value.trim();
-  if (!profileId) {
-    showError(new Error("Enter a profile ID above before generating an answer file."));
+afNewBtn.addEventListener("click", async () => {
+  errorEl.textContent = "";
+  openAnswerFileWizard();
+});
+
+afNextBtn.addEventListener("click", () => {
+  if (afWizardStep === 1 && !afIdInput.checkValidity()) {
+    afIdInput.reportValidity();
     return;
   }
+  if (afWizardStep === 2 && !afUiLanguageInput.checkValidity()) {
+    afUiLanguageInput.reportValidity();
+    return;
+  }
+  showAnswerFileWizardStep(afWizardStep + 1);
+});
 
+afBackBtn.addEventListener("click", () => showAnswerFileWizardStep(afWizardStep - 1));
+
+afCancelBtn.addEventListener("click", () => afWizard.close());
+
+answerFileForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
   errorEl.textContent = "";
-  profileAnswerStatus.textContent = "";
-  profileAnswerGenerateBtn.disabled = true;
+  const options: AnswerFileOptions = {
+    uiLanguage: afUiLanguageInput.value,
+    timeZone: afTimeZoneInput.value,
+    registeredOwner: afOwnerInput.value,
+    registeredOrganization: afOrgInput.value,
+    productKey: afProductKeyInput.value,
+    skipOobe: afSkipOobeInput.checked,
+  };
   try {
-    const xml = generateAnswerFile({
-      uiLanguage: profileAnswerUiLangInput.value,
-      productKey: profileAnswerProductKeyInput.value,
-    });
-    const key = `${profileId}/autounattend.xml`;
-    await api.createAnswerFile(key, xml);
-    profileAnswerFileInput.value = key;
-    profileAnswerStatus.textContent = "Answer file generated and uploaded.";
+    const content = generateAnswerFile(options);
+    const input = { id: afIdInput.value, label: afLabelInput.value, options, content };
+    if (editingAnswerFileId) {
+      await api.updateCatalogAnswerFile(editingAnswerFileId, input);
+    } else {
+      await api.createCatalogAnswerFile(input);
+    }
+    afWizard.close();
+    await refresh();
   } catch (err) {
     showError(err);
-  } finally {
-    profileAnswerGenerateBtn.disabled = false;
+  }
+});
+
+answerFilesBody.addEventListener("click", async (e) => {
+  const target = e.target as HTMLElement;
+  const editId = target.dataset.editAf;
+  const deleteId = target.dataset.deleteAf;
+  if (editId) {
+    const answerFiles = await api.listCatalogAnswerFiles();
+    const answerFile = answerFiles.find((a) => a.id === editId);
+    if (!answerFile) return;
+    openAnswerFileWizard(answerFile);
+  } else if (deleteId) {
+    if (!confirm(`Delete answer file "${deleteId}"?`)) return;
+    try {
+      await api.deleteCatalogAnswerFile(deleteId);
+      await refresh();
+    } catch (err) {
+      showError(err);
+    }
   }
 });
 
@@ -692,7 +838,7 @@ profilesBody.addEventListener("click", async (e) => {
     (profileForm.elements.namedItem("label") as HTMLInputElement).value = profile.label;
     (profileForm.elements.namedItem("installWim") as HTMLInputElement).value = profile.installWim;
     (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
-    (profileForm.elements.namedItem("answerFile") as HTMLInputElement).value = profile.answerFile;
+    profileAnswerFileSelect.value = profile.answerFile;
     profileSubmitBtn.textContent = "Save profile";
     profileCancelBtn.hidden = false;
   } else if (deleteId) {

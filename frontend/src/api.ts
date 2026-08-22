@@ -61,6 +61,29 @@ export interface BuiltinAction {
   label: string;
 }
 
+export interface AnswerFileOptions {
+  uiLanguage: string;
+  timeZone: string;
+  registeredOwner: string;
+  registeredOrganization: string;
+  productKey: string;
+  skipOobe: boolean;
+}
+
+export interface AnswerFile {
+  id: string;
+  label: string;
+  r2Key: string;
+  options: AnswerFileOptions;
+}
+
+export interface AnswerFileInput {
+  id: string;
+  label: string;
+  options: AnswerFileOptions;
+  content: string;
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -147,11 +170,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ key }),
     }),
-  createAnswerFile: (key: string, content: string) =>
-    request<{ ok: true; key: string }>("/api/catalog/answer-files", {
-      method: "POST",
-      body: JSON.stringify({ key, content }),
+  listCatalogAnswerFiles: () => request<AnswerFile[]>("/api/catalog/answer-files"),
+  createCatalogAnswerFile: (input: AnswerFileInput) =>
+    request<{ ok: true }>("/api/catalog/answer-files", { method: "POST", body: JSON.stringify(input) }),
+  updateCatalogAnswerFile: (id: string, input: AnswerFileInput) =>
+    request<{ ok: true }>(`/api/catalog/answer-files/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
     }),
+  deleteCatalogAnswerFile: (id: string) =>
+    request<{ ok: true }>(`/api/catalog/answer-files/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   listCatalogApps: () => request<AppEntry[]>("/api/catalog/apps"),
   createCatalogApp: (app: AppEntry) =>

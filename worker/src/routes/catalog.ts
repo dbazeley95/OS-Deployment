@@ -19,6 +19,15 @@ import {
   updateTaskSequence,
 } from "../lib/taskSequences";
 import { BUILTIN_ACTIONS } from "../lib/builtinActions";
+import {
+  AnswerFileInput,
+  AnswerFileOptions,
+  createAnswerFile,
+  deleteAnswerFile,
+  getAnswerFile,
+  listAnswerFiles,
+  updateAnswerFile,
+} from "../lib/answerFiles";
 
 const INSTALL_KINDS: InstallKind[] = ["msi", "exe", "script"];
 
@@ -227,21 +236,71 @@ catalogRoute.post("/uploads/:uploadId/abort", async (c) => {
 
 const MAX_ANSWER_FILE_BYTES = 256 * 1024; // answer files are a few KB - generous but not open-ended
 
+function parseAnswerFileOptions(body: unknown): AnswerFileOptions | { error: string } {
+  const o = body as Partial<AnswerFileOptions> | null;
+  if (!o?.uiLanguage?.trim()) return { error: "options.uiLanguage is required" };
+  return {
+    uiLanguage: o.uiLanguage,
+    timeZone: o.timeZone ?? "",
+    registeredOwner: o.registeredOwner ?? "",
+    registeredOrganization: o.registeredOrganization ?? "",
+    productKey: o.productKey ?? "",
+    skipOobe: Boolean(o.skipOobe),
+  };
+}
+
+function parseAnswerFileInput(
+  body: unknown,
+  content: unknown
+): (AnswerFileInput & { content: string }) | { error: string } {
+  const b = body as { id?: string; label?: string; options?: unknown } | null;
+  if (!b?.id || !b.label) return { error: "id and label are required" };
+  const options = parseAnswerFileOptions(b.options);
+  if ("error" in options) return options;
+  if (typeof content !== "string" || content.length === 0) return { error: "content is required" };
+  if (content.length > MAX_ANSWER_FILE_BYTES) return { error: `content exceeds ${MAX_ANSWER_FILE_BYTES} bytes` };
+  return { id: b.id, label: b.label, r2Key: `${b.id}/autounattend.xml`, options, content };
+}
+
 /**
- * Writes a generated (or hand-edited) answer file straight to R2 - unlike
- * install.wim this is small enough to need no multipart machinery, just a
- * single PUT. Used by the OS Profiles form's answer-file generator so a
- * technician never has to hand-author XML or use the CLI upload script.
+ * Generated answer files (unattend.xml) are a first-class catalog entity, not
+ * just a free-typed R2 key - the wizard runs entirely client-side
+ * (frontend/src/answerFile.ts builds the XML), so create/update here just
+ * validate the wizard's chosen options, write the resulting content straight
+ * to R2 (small enough to need no multipart machinery, unlike install.wim),
+ * and track it in D1 so it shows up in the Answer Files tab and can be
+ * re-opened for editing.
  */
+catalogRoute.get("/answer-files", async (c) => c.json(await listAnswerFiles(c.env.DB)));
+
 catalogRoute.post("/answer-files", async (c) => {
-  const body = await c.req.json<{ key?: string; content?: string }>().catch(() => null);
-  if (!isValidR2Key(body?.key)) return c.json({ error: "key is required" }, 400);
-  if (typeof body?.content !== "string" || body.content.length === 0) {
-    return c.json({ error: "content is required" }, 400);
+  const body = await c.req.json<{ content?: string }>().catch(() => null);
+  const input = parseAnswerFileInput(body, body?.content);
+  if ("error" in input) return c.json(input, 400);
+  if (await getAnswerFile(c.env.DB, input.id)) {
+    return c.json({ error: `answer file ${input.id} already exists` }, 409);
   }
-  if (body.content.length > MAX_ANSWER_FILE_BYTES) {
-    return c.json({ error: `content exceeds ${MAX_ANSWER_FILE_BYTES} bytes` }, 400);
-  }
-  await c.env.IMAGES.put(body.key, body.content, { httpMetadata: { contentType: "application/xml" } });
-  return c.json({ ok: true, key: body.key });
+  await c.env.IMAGES.put(input.r2Key, input.content, { httpMetadata: { contentType: "application/xml" } });
+  await createAnswerFile(c.env.DB, input);
+  return c.json({ ok: true }, 201);
+});
+
+catalogRoute.put("/answer-files/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json<{ content?: string }>().catch(() => null);
+  const input = parseAnswerFileInput({ ...(body as object), id }, body?.content);
+  if ("error" in input) return c.json(input, 400);
+  await c.env.IMAGES.put(input.r2Key, input.content, { httpMetadata: { contentType: "application/xml" } });
+  const updated = await updateAnswerFile(c.env.DB, id, input);
+  if (!updated) return c.json({ error: "answer file not found" }, 404);
+  return c.json({ ok: true });
+});
+
+catalogRoute.delete("/answer-files/:id", async (c) => {
+  const id = c.req.param("id");
+  const existing = await getAnswerFile(c.env.DB, id);
+  if (!existing) return c.json({ error: "answer file not found" }, 404);
+  await c.env.IMAGES.delete(existing.r2Key).catch(() => {});
+  await deleteAnswerFile(c.env.DB, id);
+  return c.json({ ok: true });
 });

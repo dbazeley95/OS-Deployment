@@ -7,6 +7,7 @@ import {
   type BuiltinAction,
   type DeploymentJob,
   type OsProfile,
+  type Role,
   type TaskSequence,
   type TaskSequenceStep,
 } from "./api";
@@ -125,10 +126,29 @@ const tsNextBtn = document.querySelector<HTMLButtonElement>("#ts-next-btn")!;
 const tsSubmitBtn = document.querySelector<HTMLButtonElement>("#ts-submit")!;
 const tsCancelBtn = document.querySelector<HTMLButtonElement>("#ts-cancel")!;
 
+const usersBody = document.querySelector<HTMLElement>("#users-body")!;
+const userForm = document.querySelector<HTMLFormElement>("#user-form")!;
+const userUsernameInput = document.querySelector<HTMLInputElement>("#user-username")!;
+const userPasswordInput = document.querySelector<HTMLInputElement>("#user-password")!;
+const userRoleSelect = document.querySelector<HTMLSelectElement>("#user-role")!;
+const userSubmitBtn = document.querySelector<HTMLButtonElement>("#user-submit")!;
+const userCancelBtn = document.querySelector<HTMLButtonElement>("#user-cancel")!;
+
+const changePasswordBtn = document.querySelector<HTMLButtonElement>("#change-password-btn")!;
+const changePasswordDialog = document.querySelector<HTMLDialogElement>("#change-password-dialog")!;
+const changePasswordForm = document.querySelector<HTMLFormElement>("#change-password-form")!;
+const changePasswordNewInput = document.querySelector<HTMLInputElement>("#change-password-new")!;
+const changePasswordConfirmInput = document.querySelector<HTMLInputElement>("#change-password-confirm")!;
+const changePasswordError = document.querySelector<HTMLElement>("#change-password-error")!;
+const changePasswordCancelBtn = document.querySelector<HTMLButtonElement>("#change-password-cancel")!;
+
 let editingProfileId: string | null = null;
 let editingAppId: string | null = null;
 let editingTaskSequenceId: string | null = null;
 let editingAnswerFileId: string | null = null;
+let editingUsername: string | null = null;
+let currentUsername: string | null = null;
+let currentRole: Role | null = null;
 let currentSteps: TaskSequenceStep[] = [];
 let stepLabels: Record<string, string> = {};
 let wizardStep = 1;
@@ -136,6 +156,17 @@ const WIZARD_STEP_COUNT = 3;
 let afWizardStep = 1;
 const AF_WIZARD_STEP_COUNT = 3;
 const expandedDeviceMacs = new Set<string>();
+
+/**
+ * Toggled once right after login/session-check, not per-element - see the
+ * body:not(.role-admin)/.role-beginner CSS rules in index.html. This is a UI
+ * convenience only; every gated action is independently enforced
+ * server-side (worker/src/lib/auth.ts's requireRole).
+ */
+function applyRoleClass(role: Role) {
+  document.body.classList.remove("role-admin", "role-technician", "role-beginner");
+  document.body.classList.add(`role-${role}`);
+}
 
 function stepKey(step: TaskSequenceStep): string {
   return `${step.kind}:${step.id}`;
@@ -245,8 +276,8 @@ async function loadProfilesTable() {
             <td class="mono">${p.imageIndex}</td>
             <td class="mono">${p.answerFile}</td>
             <td class="row-actions">
-              <button type="button" data-edit-profile="${p.id}">Edit</button>
-              <button type="button" class="danger" data-delete-profile="${p.id}">Delete</button>
+              <button type="button" class="technician-plus" data-edit-profile="${p.id}">Edit</button>
+              <button type="button" class="danger admin-only" data-delete-profile="${p.id}">Delete</button>
             </td>
           </tr>`
         )
@@ -265,8 +296,8 @@ async function loadAppsTable() {
             <td class="mono">${a.r2Key}</td>
             <td>${a.installKind}</td>
             <td class="row-actions">
-              <button type="button" data-edit-app="${a.id}">Edit</button>
-              <button type="button" class="danger" data-delete-app="${a.id}">Delete</button>
+              <button type="button" class="technician-plus" data-edit-app="${a.id}">Edit</button>
+              <button type="button" class="danger admin-only" data-delete-app="${a.id}">Delete</button>
             </td>
           </tr>`
         )
@@ -302,13 +333,36 @@ async function loadAnswerFilesTable() {
             <td>${answerFileOptionsSummary(a.options)}</td>
             <td class="mono">${a.r2Key}</td>
             <td class="row-actions">
-              <button type="button" data-edit-af="${a.id}">Edit</button>
-              <button type="button" class="danger" data-delete-af="${a.id}">Delete</button>
+              <button type="button" class="technician-plus" data-edit-af="${a.id}">Edit</button>
+              <button type="button" class="danger admin-only" data-delete-af="${a.id}">Delete</button>
             </td>
           </tr>`
         )
         .join("")
     : emptyRow(5, "No answer files yet.");
+}
+
+async function loadUsersTable() {
+  const users = await api.listCatalogUsers();
+  usersBody.innerHTML = users.length
+    ? users
+        .map(
+          (u) => `<tr>
+            <td class="mono">${u.username}</td>
+            <td>${u.role}</td>
+            <td>${u.createdAt}</td>
+            <td class="row-actions admin-only">
+              <button type="button" data-edit-user="${u.username}">Edit</button>
+              ${
+                u.username === currentUsername
+                  ? ""
+                  : `<button type="button" class="danger" data-delete-user="${u.username}">Delete</button>`
+              }
+            </td>
+          </tr>`
+        )
+        .join("")
+    : emptyRow(4, "No users yet.");
 }
 
 async function loadTsStepOptions() {
@@ -363,8 +417,8 @@ async function loadTaskSequencesTable() {
             <td>${profileLabel(s.osProfileId)}</td>
             <td>${stepsSummary(s.steps)}</td>
             <td class="row-actions">
-              <button type="button" data-edit-ts="${s.id}">Edit</button>
-              <button type="button" class="danger" data-delete-ts="${s.id}">Delete</button>
+              <button type="button" class="technician-plus" data-edit-ts="${s.id}">Edit</button>
+              <button type="button" class="danger admin-only" data-delete-ts="${s.id}">Delete</button>
             </td>
           </tr>`
         )
@@ -384,6 +438,7 @@ async function refresh() {
       loadTaskSequencesTable(),
       loadAnswerFileSelectOptions(),
       loadAnswerFilesTable(),
+      loadUsersTable(),
     ]);
   } catch (err) {
     showError(err);
@@ -408,6 +463,16 @@ function resetAppForm() {
   appIdInput.disabled = false;
   appSubmitBtn.textContent = "Add app";
   appCancelBtn.hidden = true;
+}
+
+function resetUserForm() {
+  editingUsername = null;
+  userForm.reset();
+  userUsernameInput.disabled = false;
+  userPasswordInput.required = true;
+  userPasswordInput.placeholder = "";
+  userSubmitBtn.textContent = "Add user";
+  userCancelBtn.hidden = true;
 }
 
 function renderWizardReview() {
@@ -999,16 +1064,92 @@ taskSequencesBody.addEventListener("click", async (e) => {
   }
 });
 
+userForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  errorEl.textContent = "";
+  const data = new FormData(userForm);
+  const username = String(data.get("username"));
+  const password = String(data.get("password") ?? "");
+  const role = data.get("role") as Role;
+  try {
+    if (editingUsername) {
+      await api.updateCatalogUser(editingUsername, password ? { role, password } : { role });
+    } else {
+      await api.createCatalogUser({ username, password, role });
+    }
+    resetUserForm();
+    await refresh();
+  } catch (err) {
+    showError(err);
+  }
+});
+
+userCancelBtn.addEventListener("click", resetUserForm);
+
+usersBody.addEventListener("click", async (e) => {
+  const target = e.target as HTMLElement;
+  const editUsername = target.dataset.editUser;
+  const deleteUsername = target.dataset.deleteUser;
+  if (editUsername) {
+    const users = await api.listCatalogUsers();
+    const user = users.find((u) => u.username === editUsername);
+    if (!user) return;
+    editingUsername = user.username;
+    userUsernameInput.value = user.username;
+    userUsernameInput.disabled = true;
+    userPasswordInput.required = false;
+    userPasswordInput.placeholder = "Leave blank to keep current";
+    userRoleSelect.value = user.role;
+    userSubmitBtn.textContent = "Save user";
+    userCancelBtn.hidden = false;
+  } else if (deleteUsername) {
+    if (!confirm(`Delete user "${deleteUsername}"?`)) return;
+    try {
+      await api.deleteCatalogUser(deleteUsername);
+      await refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+});
+
+changePasswordBtn.addEventListener("click", () => {
+  changePasswordForm.reset();
+  changePasswordError.textContent = "";
+  changePasswordDialog.showModal();
+});
+
+changePasswordCancelBtn.addEventListener("click", () => changePasswordDialog.close());
+
+changePasswordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  changePasswordError.textContent = "";
+  if (changePasswordNewInput.value !== changePasswordConfirmInput.value) {
+    changePasswordError.textContent = "Passwords do not match.";
+    return;
+  }
+  try {
+    await api.changeMyPassword(changePasswordNewInput.value);
+    changePasswordDialog.close();
+  } catch (err) {
+    changePasswordError.textContent = err instanceof Error ? err.message : String(err);
+  }
+});
+
 function showLoggedIn() {
   loginCard.hidden = true;
   appEl.hidden = false;
   logoutBtn.hidden = false;
+  changePasswordBtn.hidden = false;
 }
 
 function showLoggedOut() {
   loginCard.hidden = false;
   appEl.hidden = true;
   logoutBtn.hidden = true;
+  changePasswordBtn.hidden = true;
+  currentUsername = null;
+  currentRole = null;
 }
 
 loginForm.addEventListener("submit", async (e) => {
@@ -1016,7 +1157,10 @@ loginForm.addEventListener("submit", async (e) => {
   errorEl.textContent = "";
   const data = new FormData(loginForm);
   try {
-    await api.login(String(data.get("username")), String(data.get("password")));
+    const { username, role } = await api.login(String(data.get("username")), String(data.get("password")));
+    currentUsername = username;
+    currentRole = role;
+    applyRoleClass(role);
     loginForm.reset();
     showLoggedIn();
     await refresh();
@@ -1039,7 +1183,10 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 async function init() {
   renderStepsList();
   try {
-    await api.me();
+    const { username, role } = await api.me();
+    currentUsername = username;
+    currentRole = role;
+    applyRoleClass(role);
     showLoggedIn();
     await refresh();
     refreshTimer ??= setInterval(refresh, 5000);

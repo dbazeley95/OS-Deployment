@@ -9,6 +9,7 @@ import {
   type TaskSequenceStep,
 } from "./api";
 import { findWindowsWimInIso } from "./iso";
+import { generateAnswerFile } from "./answerFile";
 
 const versionBadge = document.querySelector<HTMLButtonElement>("#version-badge")!;
 const releaseNotesDialog = document.querySelector<HTMLDialogElement>("#release-notes-dialog")!;
@@ -74,6 +75,11 @@ const profileIsoUploadBtn = document.querySelector<HTMLButtonElement>("#profile-
 const profileWimProgress = document.querySelector<HTMLElement>("#profile-wim-progress")!;
 const profileWimProgressBar = document.querySelector<HTMLProgressElement>("#profile-wim-progress-bar")!;
 const profileWimProgressText = document.querySelector<HTMLElement>("#profile-wim-progress-text")!;
+const profileAnswerFileInput = document.querySelector<HTMLInputElement>("#profile-answer-file")!;
+const profileAnswerUiLangInput = document.querySelector<HTMLInputElement>("#profile-answer-uilang")!;
+const profileAnswerProductKeyInput = document.querySelector<HTMLInputElement>("#profile-answer-productkey")!;
+const profileAnswerGenerateBtn = document.querySelector<HTMLButtonElement>("#profile-answer-generate-btn")!;
+const profileAnswerStatus = document.querySelector<HTMLElement>("#profile-answer-status")!;
 
 const appsBody = document.querySelector<HTMLElement>("#apps-body")!;
 const appForm = document.querySelector<HTMLFormElement>("#app-form")!;
@@ -338,6 +344,7 @@ function resetProfileForm() {
   profileIsoUploadBtn.disabled = true;
   profileWimProgress.hidden = true;
   profileWimProgressBar.value = 0;
+  profileAnswerStatus.textContent = "";
 }
 
 function resetAppForm() {
@@ -642,6 +649,32 @@ profileIsoUploadBtn.addEventListener("click", async () => {
     showError(err);
     profileIsoFileInput.disabled = false;
     profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
+  }
+});
+
+profileAnswerGenerateBtn.addEventListener("click", async () => {
+  const profileId = profileIdInput.value.trim();
+  if (!profileId) {
+    showError(new Error("Enter a profile ID above before generating an answer file."));
+    return;
+  }
+
+  errorEl.textContent = "";
+  profileAnswerStatus.textContent = "";
+  profileAnswerGenerateBtn.disabled = true;
+  try {
+    const xml = generateAnswerFile({
+      uiLanguage: profileAnswerUiLangInput.value,
+      productKey: profileAnswerProductKeyInput.value,
+    });
+    const key = `${profileId}/autounattend.xml`;
+    await api.createAnswerFile(key, xml);
+    profileAnswerFileInput.value = key;
+    profileAnswerStatus.textContent = "Answer file generated and uploaded.";
+  } catch (err) {
+    showError(err);
+  } finally {
+    profileAnswerGenerateBtn.disabled = false;
   }
 });
 

@@ -147,6 +147,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ key }),
     }),
+  createAnswerFile: (key: string, content: string) =>
+    request<{ ok: true; key: string }>("/api/catalog/answer-files", {
+      method: "POST",
+      body: JSON.stringify({ key, content }),
+    }),
 
   listCatalogApps: () => request<AppEntry[]>("/api/catalog/apps"),
   createCatalogApp: (app: AppEntry) =>

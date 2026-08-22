@@ -604,7 +604,7 @@
             <input id="profile-label" name="label" placeholder="Windows 11 25H2 Pro" required />
           </div>
           <div class="field">
-            <label for="profile-install-wim">Install WIM (R2 key)</label>
+            <label for="profile-install-wim" title="Where install.wim lives in storage - fills in automatically when you upload or extract one below">Install WIM (R2 key)</label>
             <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
           </div>
           <div class="field field-wide">
@@ -631,8 +631,18 @@
             <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
           </div>
           <div class="field">
-            <label for="profile-answer-file">Answer file (R2 key)</label>
+            <label for="profile-answer-file" title="The unattend.xml WinPE hands to Windows for hostname and first-logon setup - fills in automatically when you generate one below">Answer file (R2 key)</label>
             <input id="profile-answer-file" name="answerFile" placeholder="windows-11-25h2-pro/autounattend.xml" required />
+          </div>
+          <div class="field field-wide">
+            <label for="profile-answer-uilang">Or generate an answer file</label>
+            <div class="upload-row">
+              <input id="profile-answer-uilang" placeholder="UI language" value="en-US" />
+              <input id="profile-answer-productkey" placeholder="Product key (optional)" />
+              <button type="button" id="profile-answer-generate-btn">Generate &amp; upload</button>
+            </div>
+            <p class="hint">Creates a working unattend.xml (hostname substitution and first-logon phone-home already wired up) and uploads it - no XML editing needed.</p>
+            <p class="hint" id="profile-answer-status"></p>
           </div>
           <button type="submit" id="profile-submit">Add profile</button>
           <button type="button" id="profile-cancel" hidden>Cancel</button>

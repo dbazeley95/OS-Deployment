@@ -224,3 +224,24 @@ catalogRoute.post("/uploads/:uploadId/abort", async (c) => {
   await upload.abort();
   return c.json({ ok: true });
 });
+
+const MAX_ANSWER_FILE_BYTES = 256 * 1024; // answer files are a few KB - generous but not open-ended
+
+/**
+ * Writes a generated (or hand-edited) answer file straight to R2 - unlike
+ * install.wim this is small enough to need no multipart machinery, just a
+ * single PUT. Used by the OS Profiles form's answer-file generator so a
+ * technician never has to hand-author XML or use the CLI upload script.
+ */
+catalogRoute.post("/answer-files", async (c) => {
+  const body = await c.req.json<{ key?: string; content?: string }>().catch(() => null);
+  if (!isValidR2Key(body?.key)) return c.json({ error: "key is required" }, 400);
+  if (typeof body?.content !== "string" || body.content.length === 0) {
+    return c.json({ error: "content is required" }, 400);
+  }
+  if (body.content.length > MAX_ANSWER_FILE_BYTES) {
+    return c.json({ error: `content exceeds ${MAX_ANSWER_FILE_BYTES} bytes` }, 400);
+  }
+  await c.env.IMAGES.put(body.key, body.content, { httpMetadata: { contentType: "application/xml" } });
+  return c.json({ ok: true, key: body.key });
+});

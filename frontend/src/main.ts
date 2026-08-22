@@ -1137,6 +1137,7 @@ changePasswordForm.addEventListener("submit", async (e) => {
 });
 
 function showLoggedIn() {
+  document.body.classList.remove("login-screen");
   loginCard.hidden = true;
   appEl.hidden = false;
   logoutBtn.hidden = false;
@@ -1144,6 +1145,7 @@ function showLoggedIn() {
 }
 
 function showLoggedOut() {
+  document.body.classList.add("login-screen");
   loginCard.hidden = false;
   appEl.hidden = true;
   logoutBtn.hidden = true;

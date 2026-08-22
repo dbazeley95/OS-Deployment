@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Bindings } from "../types";
-import { signSessionToken, verifySessionToken, verifyTechnicianCredentials } from "../lib/auth";
+import { getTechnicianRole, signSessionToken, verifySessionToken, verifyTechnicianCredentials } from "../lib/auth";
 
 export const authRoute = new Hono<{ Bindings: Bindings }>();
 
@@ -25,7 +25,8 @@ authRoute.post("/login", async (c) => {
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
-  return c.json({ username: body.username });
+  const role = await getTechnicianRole(c.env.DB, body.username);
+  return c.json({ username: body.username, role });
 });
 
 authRoute.post("/logout", (c) => {
@@ -36,5 +37,7 @@ authRoute.post("/logout", (c) => {
 authRoute.get("/me", async (c) => {
   const username = await verifySessionToken(c.env.PASSWORD_PEPPER, getCookie(c, SESSION_COOKIE));
   if (!username) return c.json({ error: "not logged in" }, 401);
-  return c.json({ username });
+  const role = await getTechnicianRole(c.env.DB, username);
+  if (!role) return c.json({ error: "not logged in" }, 401); // account deleted since the token was issued
+  return c.json({ username, role });
 });

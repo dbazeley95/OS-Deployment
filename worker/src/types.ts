@@ -1,9 +1,14 @@
+import type { Role } from "./lib/auth";
+
 export type Bindings = {
   DB: D1Database;
   IMAGES: R2Bucket;
   ALLOWED_ORIGIN: string;
   PASSWORD_PEPPER: string;
 };
+
+/** Set by requireSession (worker/src/index.ts) on every authenticated request. */
+export type Variables = { username: string; role: Role };
 
 export type JobStatus = "pending" | "booted" | "installing" | "complete" | "failed";
 

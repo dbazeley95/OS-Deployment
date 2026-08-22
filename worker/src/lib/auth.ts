@@ -1,4 +1,20 @@
-import type { Bindings } from "../types";
+import { createMiddleware } from "hono/factory";
+import type { Bindings, Variables } from "../types";
+
+/**
+ * Admin (full CRUD everywhere, including managing other users),
+ * technician (create/edit catalog items, no delete, no user management
+ * beyond their own password), beginner (read-only everywhere, own
+ * password only). See worker/src/index.ts's requireRole middleware.
+ */
+export type Role = "admin" | "technician" | "beginner";
+
+export const ROLE_RANK: Record<Role, number> = { beginner: 0, technician: 1, admin: 2 };
+
+/** Random hex salt for a new/reset password - nothing generated one before, since accounts were only ever created by hand. */
+export function generateSalt(): string {
+  return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 async function hmacSha256Hex(key: string, message: string): Promise<string> {
   const enc = new TextEncoder();
@@ -43,6 +59,35 @@ export async function verifyTechnicianCredentials(
   if (!row) return false;
   const computed = await hashTechnicianPassword(pepper, row.salt, password);
   return timingSafeEqual(computed, row.password_hash);
+}
+
+/**
+ * Looked up fresh from D1 on every request (never embedded in the signed
+ * session token below) so a role change or account deletion takes effect on
+ * the user's very next request instead of waiting for their session to
+ * expire. Returns null if the account no longer exists.
+ */
+export async function getTechnicianRole(db: Bindings["DB"], username: string): Promise<Role | null> {
+  const row = await db.prepare(`SELECT role FROM technicians WHERE username = ?1`).bind(username).first<{
+    role: Role;
+  }>();
+  return row?.role ?? null;
+}
+
+/**
+ * Applied per-route in routes/catalog.ts on top of the requireSession
+ * middleware in index.ts. Built with Hono's createMiddleware() rather than a
+ * hand-written (c, next) => ... function - that's what keeps the route's
+ * own path-param typing (e.g. c.req.param("id") being `string` not `string |
+ * undefined`) intact for the handler that follows it in the chain.
+ */
+export function requireRole(min: Role) {
+  return createMiddleware<{ Bindings: Bindings; Variables: Variables }>(async (c, next) => {
+    if (ROLE_RANK[c.get("role")] < ROLE_RANK[min]) {
+      return c.json({ error: "insufficient permissions" }, 403);
+    }
+    await next();
+  });
 }
 
 function base64UrlEncode(s: string): string {

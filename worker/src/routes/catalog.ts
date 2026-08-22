@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import type { Bindings } from "../types";
+import type { Bindings, Variables } from "../types";
+import { requireRole } from "../lib/auth";
 import {
   createProfile,
   deleteProfile,
@@ -28,6 +29,8 @@ import {
   listAnswerFiles,
   updateAnswerFile,
 } from "../lib/answerFiles";
+import { Role, ROLE_RANK } from "../lib/auth";
+import { countAdmins, createUser, deleteUser, getUser, listUsers, resetUserPassword, setUserRole } from "../lib/users";
 
 const INSTALL_KINDS: InstallKind[] = ["msi", "exe", "script"];
 
@@ -44,7 +47,7 @@ function isValidR2Key(key: unknown): key is string {
  * apps.ts, taskSequences.ts) instead of requiring a code change + redeploy.
  * Mounted at /api/catalog, behind the session middleware in worker/src/index.ts.
  */
-export const catalogRoute = new Hono<{ Bindings: Bindings }>();
+export const catalogRoute = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
   const b = body as Partial<OsProfileInput> | null;
@@ -65,7 +68,7 @@ function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
 
 catalogRoute.get("/profiles", async (c) => c.json(await listProfiles(c.env.DB)));
 
-catalogRoute.post("/profiles", async (c) => {
+catalogRoute.post("/profiles", requireRole("technician"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const input = parseProfileInput(body);
   if ("error" in input) return c.json(input, 400);
@@ -76,7 +79,7 @@ catalogRoute.post("/profiles", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
-catalogRoute.put("/profiles/:id", async (c) => {
+catalogRoute.put("/profiles/:id", requireRole("technician"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const input = parseProfileInput({ ...(body as object), id });
@@ -86,7 +89,7 @@ catalogRoute.put("/profiles/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-catalogRoute.delete("/profiles/:id", async (c) => {
+catalogRoute.delete("/profiles/:id", requireRole("admin"), async (c) => {
   const deleted = await deleteProfile(c.env.DB, c.req.param("id"));
   if (!deleted) return c.json({ error: "profile not found" }, 404);
   return c.json({ ok: true });
@@ -105,7 +108,7 @@ function parseAppInput(body: unknown): AppInput | { error: string } {
 
 catalogRoute.get("/apps", async (c) => c.json(await listApps(c.env.DB)));
 
-catalogRoute.post("/apps", async (c) => {
+catalogRoute.post("/apps", requireRole("technician"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const input = parseAppInput(body);
   if ("error" in input) return c.json(input, 400);
@@ -116,7 +119,7 @@ catalogRoute.post("/apps", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
-catalogRoute.put("/apps/:id", async (c) => {
+catalogRoute.put("/apps/:id", requireRole("technician"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const input = parseAppInput({ ...(body as object), id });
@@ -126,7 +129,7 @@ catalogRoute.put("/apps/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-catalogRoute.delete("/apps/:id", async (c) => {
+catalogRoute.delete("/apps/:id", requireRole("admin"), async (c) => {
   const deleted = await deleteApp(c.env.DB, c.req.param("id"));
   if (!deleted) return c.json({ error: "app not found" }, 404);
   return c.json({ ok: true });
@@ -156,7 +159,7 @@ catalogRoute.get("/builtin-actions", (c) => c.json(BUILTIN_ACTIONS));
 
 catalogRoute.get("/task-sequences", async (c) => c.json(await listTaskSequences(c.env.DB)));
 
-catalogRoute.post("/task-sequences", async (c) => {
+catalogRoute.post("/task-sequences", requireRole("technician"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const input = parseTaskSequenceInput(body);
   if ("error" in input) return c.json(input, 400);
@@ -170,7 +173,7 @@ catalogRoute.post("/task-sequences", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
-catalogRoute.put("/task-sequences/:id", async (c) => {
+catalogRoute.put("/task-sequences/:id", requireRole("technician"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   const input = parseTaskSequenceInput({ ...(body as object), id });
@@ -183,7 +186,7 @@ catalogRoute.put("/task-sequences/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-catalogRoute.delete("/task-sequences/:id", async (c) => {
+catalogRoute.delete("/task-sequences/:id", requireRole("admin"), async (c) => {
   const deleted = await deleteTaskSequence(c.env.DB, c.req.param("id"));
   if (!deleted) return c.json({ error: "task sequence not found" }, 404);
   return c.json({ ok: true });
@@ -197,14 +200,14 @@ catalogRoute.delete("/task-sequences/:id", async (c) => {
  * resumeMultipartUpload(key, uploadId), since R2Bucket has no "get upload by
  * id alone" lookup.
  */
-catalogRoute.post("/uploads", async (c) => {
+catalogRoute.post("/uploads", requireRole("technician"), async (c) => {
   const body = await c.req.json<{ key?: string }>().catch(() => null);
   if (!isValidR2Key(body?.key)) return c.json({ error: "key is required" }, 400);
   const upload = await c.env.IMAGES.createMultipartUpload(body!.key);
   return c.json({ key: upload.key, uploadId: upload.uploadId });
 });
 
-catalogRoute.put("/uploads/:uploadId/parts/:partNumber", async (c) => {
+catalogRoute.put("/uploads/:uploadId/parts/:partNumber", requireRole("technician"), async (c) => {
   const key = c.req.query("key");
   if (!isValidR2Key(key)) return c.json({ error: "key query param is required" }, 400);
   const partNumber = Number(c.req.param("partNumber"));
@@ -216,7 +219,7 @@ catalogRoute.put("/uploads/:uploadId/parts/:partNumber", async (c) => {
   return c.json({ partNumber: part.partNumber, etag: part.etag });
 });
 
-catalogRoute.post("/uploads/:uploadId/complete", async (c) => {
+catalogRoute.post("/uploads/:uploadId/complete", requireRole("technician"), async (c) => {
   const body = await c.req.json<{ key?: string; parts?: { partNumber: number; etag: string }[] }>().catch(() => null);
   if (!isValidR2Key(body?.key) || !Array.isArray(body?.parts)) {
     return c.json({ error: "key and parts are required" }, 400);
@@ -226,7 +229,7 @@ catalogRoute.post("/uploads/:uploadId/complete", async (c) => {
   return c.json({ ok: true });
 });
 
-catalogRoute.post("/uploads/:uploadId/abort", async (c) => {
+catalogRoute.post("/uploads/:uploadId/abort", requireRole("technician"), async (c) => {
   const body = await c.req.json<{ key?: string }>().catch(() => null);
   if (!isValidR2Key(body?.key)) return c.json({ error: "key is required" }, 400);
   const upload = c.env.IMAGES.resumeMultipartUpload(body!.key, c.req.param("uploadId"));
@@ -273,7 +276,7 @@ function parseAnswerFileInput(
  */
 catalogRoute.get("/answer-files", async (c) => c.json(await listAnswerFiles(c.env.DB)));
 
-catalogRoute.post("/answer-files", async (c) => {
+catalogRoute.post("/answer-files", requireRole("technician"), async (c) => {
   const body = await c.req.json<{ content?: string }>().catch(() => null);
   const input = parseAnswerFileInput(body, body?.content);
   if ("error" in input) return c.json(input, 400);
@@ -285,7 +288,7 @@ catalogRoute.post("/answer-files", async (c) => {
   return c.json({ ok: true }, 201);
 });
 
-catalogRoute.put("/answer-files/:id", async (c) => {
+catalogRoute.put("/answer-files/:id", requireRole("technician"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ content?: string }>().catch(() => null);
   const input = parseAnswerFileInput({ ...(body as object), id }, body?.content);
@@ -296,11 +299,95 @@ catalogRoute.put("/answer-files/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-catalogRoute.delete("/answer-files/:id", async (c) => {
+catalogRoute.delete("/answer-files/:id", requireRole("admin"), async (c) => {
   const id = c.req.param("id");
   const existing = await getAnswerFile(c.env.DB, id);
   if (!existing) return c.json({ error: "answer file not found" }, 404);
   await c.env.IMAGES.delete(existing.r2Key).catch(() => {});
   await deleteAnswerFile(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+const ROLES: Role[] = Object.keys(ROLE_RANK) as Role[];
+const MIN_PASSWORD_LENGTH = 8;
+
+function parseRole(value: unknown): Role | { error: string } {
+  if (typeof value !== "string" || !ROLES.includes(value as Role)) {
+    return { error: `role must be one of: ${ROLES.join(", ")}` };
+  }
+  return value as Role;
+}
+
+/**
+ * Admin-UI account management (worker/src/lib/users.ts), backed by the same
+ * `technicians` table auth.ts verifies logins against. Listing is open to
+ * every role (read-only, per the Beginner tier); creating an account,
+ * changing someone else's role/password, and deleting are admin-only - a
+ * Technician editing arbitrary credentials would be a privilege-escalation
+ * risk, so self password changes go through the separate /users/me/password
+ * route below instead, gated only by requireSession (no role check).
+ */
+catalogRoute.get("/users", async (c) => c.json(await listUsers(c.env.DB)));
+
+catalogRoute.post("/users", requireRole("admin"), async (c) => {
+  const body = await c.req.json<{ username?: string; password?: string; role?: unknown }>().catch(() => null);
+  if (!body?.username?.trim() || !body.password) {
+    return c.json({ error: "username and password are required" }, 400);
+  }
+  if (body.password.length < MIN_PASSWORD_LENGTH) {
+    return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
+  }
+  const role = parseRole(body.role);
+  if (typeof role !== "string") return c.json(role, 400);
+  if (await getUser(c.env.DB, body.username)) {
+    return c.json({ error: `user ${body.username} already exists` }, 409);
+  }
+  await createUser(c.env.DB, c.env.PASSWORD_PEPPER, { username: body.username, password: body.password, role });
+  return c.json({ ok: true }, 201);
+});
+
+// Self password change - deliberately NOT under /users/:username, and takes
+// the username from the session rather than the request body, so this route
+// can stay open to every role without letting anyone touch another account.
+catalogRoute.put("/users/me/password", async (c) => {
+  const body = await c.req.json<{ password?: string }>().catch(() => null);
+  if (!body?.password || body.password.length < MIN_PASSWORD_LENGTH) {
+    return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
+  }
+  await resetUserPassword(c.env.DB, c.env.PASSWORD_PEPPER, c.get("username"), body.password);
+  return c.json({ ok: true });
+});
+
+catalogRoute.put("/users/:username", requireRole("admin"), async (c) => {
+  const username = c.req.param("username");
+  const existing = await getUser(c.env.DB, username);
+  if (!existing) return c.json({ error: "user not found" }, 404);
+  const body = await c.req.json<{ role?: unknown; password?: string }>().catch(() => null);
+  const role = parseRole(body?.role);
+  if (typeof role !== "string") return c.json(role, 400);
+  if (existing.role === "admin" && role !== "admin" && (await countAdmins(c.env.DB)) <= 1) {
+    return c.json({ error: "cannot demote the last remaining admin" }, 400);
+  }
+  if (body?.password) {
+    if (body.password.length < MIN_PASSWORD_LENGTH) {
+      return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
+    }
+    await resetUserPassword(c.env.DB, c.env.PASSWORD_PEPPER, username, body.password);
+  }
+  await setUserRole(c.env.DB, username, role);
+  return c.json({ ok: true });
+});
+
+catalogRoute.delete("/users/:username", requireRole("admin"), async (c) => {
+  const username = c.req.param("username");
+  if (username === c.get("username")) {
+    return c.json({ error: "cannot delete your own account" }, 400);
+  }
+  const existing = await getUser(c.env.DB, username);
+  if (!existing) return c.json({ error: "user not found" }, 404);
+  if (existing.role === "admin" && (await countAdmins(c.env.DB)) <= 1) {
+    return c.json({ error: "cannot delete the last remaining admin" }, 400);
+  }
+  await deleteUser(c.env.DB, username);
   return c.json({ ok: true });
 });

@@ -84,6 +84,20 @@ export interface AnswerFileInput {
   content: string;
 }
 
+/**
+ * Admin (full CRUD everywhere, including managing other users),
+ * technician (create/edit catalog items, no delete, no user management
+ * beyond their own password), beginner (read-only everywhere, own password
+ * only). See worker/src/lib/auth.ts's requireRole.
+ */
+export type Role = "admin" | "technician" | "beginner";
+
+export interface AppUser {
+  username: string;
+  role: Role;
+  createdAt: string;
+}
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -115,9 +129,12 @@ export { ApiError };
 
 export const api = {
   // Auth
-  me: () => request<{ username: string }>("/api/auth/me"),
+  me: () => request<{ username: string; role: Role }>("/api/auth/me"),
   login: (username: string, password: string) =>
-    request<{ username: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+    request<{ username: string; role: Role }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
 
   // Devices / jobs (read-only - deployments are always started on-device via DeployGui.ps1)
@@ -201,4 +218,20 @@ export const api = {
     }),
   deleteCatalogTaskSequence: (id: string) =>
     request<{ ok: true }>(`/api/catalog/task-sequences/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  // Admin-UI account management (Users tab) - creating, editing another
+  // user's role/password, and deleting are admin-only server-side; self
+  // password change goes through changeMyPassword instead, open to every role.
+  listCatalogUsers: () => request<AppUser[]>("/api/catalog/users"),
+  createCatalogUser: (input: { username: string; password: string; role: Role }) =>
+    request<{ ok: true }>("/api/catalog/users", { method: "POST", body: JSON.stringify(input) }),
+  updateCatalogUser: (username: string, input: { role: Role; password?: string }) =>
+    request<{ ok: true }>(`/api/catalog/users/${encodeURIComponent(username)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  deleteCatalogUser: (username: string) =>
+    request<{ ok: true }>(`/api/catalog/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+  changeMyPassword: (password: string) =>
+    request<{ ok: true }>("/api/catalog/users/me/password", { method: "PUT", body: JSON.stringify({ password }) }),
 };

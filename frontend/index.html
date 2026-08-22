@@ -134,6 +134,17 @@
         flex-basis: 100%;
       }
 
+      .field-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      .field-checkbox input[type="checkbox"] {
+        width: auto;
+      }
+
       .upload-row {
         display: flex;
         gap: 0.5rem;
@@ -541,6 +552,7 @@
         <button type="button" class="tab-btn" data-tab="dashboard" role="tab">Dashboard</button>
         <button type="button" class="tab-btn" data-tab="devices" role="tab">Devices</button>
         <button type="button" class="tab-btn" data-tab="profiles" role="tab">OS Profiles</button>
+        <button type="button" class="tab-btn" data-tab="answer-files" role="tab">Answer Files</button>
         <button type="button" class="tab-btn" data-tab="apps" role="tab">Apps</button>
         <button type="button" class="tab-btn" data-tab="task-sequences" role="tab">Task Sequences</button>
         <button type="button" class="tab-btn" data-tab="drivers" role="tab">Drivers</button>
@@ -631,18 +643,8 @@
             <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
           </div>
           <div class="field">
-            <label for="profile-answer-file" title="The unattend.xml WinPE hands to Windows for hostname and first-logon setup - fills in automatically when you generate one below">Answer file (R2 key)</label>
-            <input id="profile-answer-file" name="answerFile" placeholder="windows-11-25h2-pro/autounattend.xml" required />
-          </div>
-          <div class="field field-wide">
-            <label for="profile-answer-uilang">Or generate an answer file</label>
-            <div class="upload-row">
-              <input id="profile-answer-uilang" placeholder="UI language" value="en-US" />
-              <input id="profile-answer-productkey" placeholder="Product key (optional)" />
-              <button type="button" id="profile-answer-generate-btn">Generate &amp; upload</button>
-            </div>
-            <p class="hint">Creates a working unattend.xml (hostname substitution and first-logon phone-home already wired up) and uploads it - no XML editing needed.</p>
-            <p class="hint" id="profile-answer-status"></p>
+            <label for="profile-answer-file" title="Which generated answer file to hand WinPE for hostname and first-logon setup - manage these in the Answer Files tab">Answer file</label>
+            <select id="profile-answer-file" name="answerFile" required></select>
           </div>
           <button type="submit" id="profile-submit">Add profile</button>
           <button type="button" id="profile-cancel" hidden>Cancel</button>
@@ -656,6 +658,78 @@
         </table>
         </div>
       </section>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="answer-files" hidden>
+      <section class="card">
+        <h2>Answer files</h2>
+        <p class="hint">Generated unattend.xml files an OS profile can pick from directly - no free-typed keys, no hand-authored XML.</p>
+        <button type="button" id="af-new-btn">New answer file</button>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Label</th><th>Options</th><th>R2 key</th><th></th></tr>
+          </thead>
+          <tbody id="answer-files-body"></tbody>
+        </table>
+        </div>
+      </section>
+
+      <dialog id="af-wizard">
+        <form id="answer-file-form">
+          <h2 id="af-wizard-title">New answer file</h2>
+          <p class="hint" id="af-wizard-step-label">Step 1 of 3 - Basics</p>
+
+          <div class="wizard-step" data-wizard-step="1">
+            <div class="field">
+              <label for="af-id">ID</label>
+              <input id="af-id" name="id" placeholder="windows-11-25h2-default" required />
+            </div>
+            <div class="field">
+              <label for="af-label">Label</label>
+              <input id="af-label" name="label" placeholder="Windows 11 25H2 - default" required />
+            </div>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="2" hidden>
+            <div class="field">
+              <label for="af-uilanguage">UI language / locale</label>
+              <input id="af-uilanguage" name="uiLanguage" value="en-US" required />
+            </div>
+            <div class="field">
+              <label for="af-timezone">Time zone</label>
+              <input id="af-timezone" name="timeZone" placeholder="e.g. Pacific Standard Time" />
+            </div>
+            <div class="field">
+              <label for="af-owner">Registered owner</label>
+              <input id="af-owner" name="registeredOwner" placeholder="Optional" />
+            </div>
+            <div class="field">
+              <label for="af-org">Registered organization</label>
+              <input id="af-org" name="registeredOrganization" placeholder="Optional" />
+            </div>
+            <div class="field">
+              <label for="af-productkey">Product key</label>
+              <input id="af-productkey" name="productKey" placeholder="Optional" />
+            </div>
+            <label class="field-checkbox">
+              <input type="checkbox" id="af-skipoobe" name="skipOobe" checked />
+              Skip OOBE prompts (recommended for unattended imaging)
+            </label>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="3" hidden>
+            <div id="af-review"></div>
+          </div>
+
+          <div class="wizard-nav">
+            <button type="button" id="af-back-btn" hidden>Back</button>
+            <button type="button" id="af-next-btn">Next</button>
+            <button type="submit" id="af-submit" hidden>Save answer file</button>
+            <button type="button" id="af-cancel">Cancel</button>
+          </div>
+        </form>
+      </dialog>
       </div>
 
       <div class="tab-panel" data-tab-panel="apps" hidden>

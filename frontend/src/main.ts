@@ -763,9 +763,15 @@ afNewBtn.addEventListener("click", async () => {
 });
 
 afNextBtn.addEventListener("click", () => {
-  if (afWizardStep === 1 && !afIdInput.checkValidity()) {
-    afIdInput.reportValidity();
-    return;
+  if (afWizardStep === 1) {
+    if (!afIdInput.checkValidity()) {
+      afIdInput.reportValidity();
+      return;
+    }
+    if (!afLabelInput.checkValidity()) {
+      afLabelInput.reportValidity();
+      return;
+    }
   }
   if (afWizardStep === 2 && !afUiLanguageInput.checkValidity()) {
     afUiLanguageInput.reportValidity();

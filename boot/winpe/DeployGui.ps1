@@ -31,6 +31,8 @@ $UiFont = New-Object System.Drawing.Font("Segoe UI", 9)
 $UiFontBold = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
 $AccentColor = [System.Drawing.Color]::FromArgb(37, 99, 235)
 $MutedColor = [System.Drawing.Color]::FromArgb(107, 114, 128)
+$CardColor = [System.Drawing.Color]::FromArgb(247, 248, 250)
+$WarningColor = [System.Drawing.Color]::FromArgb(185, 28, 28)
 
 function New-AccentButton {
     param([string]$Text, [System.Drawing.Point]$Location, [int]$Width = 120)
@@ -44,6 +46,41 @@ function New-AccentButton {
     $btn.ForeColor = [System.Drawing.Color]::White
     $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
     return $btn
+}
+
+# Adds an accent-colored header banner (title + optional subtitle) to the
+# top of a form - the same treatment Show-LoginForm established, reused
+# across every screen for a consistent look. Returns the header's height
+# so callers know where their own content can start.
+function Add-HeaderBanner {
+    param($Form, [string]$Title, [string]$Subtitle = $null, [int]$Width, [int]$Height = 60)
+
+    $header = New-Object System.Windows.Forms.Panel
+    $header.Size = New-Object System.Drawing.Size($Width, $Height)
+    $header.Location = New-Object System.Drawing.Point(0, 0)
+    $header.BackColor = $AccentColor
+    $Form.Controls.Add($header)
+
+    $titleY = if ($Subtitle) { 10 } else { [int](($Height - 32) / 2) }
+
+    $labelTitle = New-Object System.Windows.Forms.Label
+    $labelTitle.Text = $Title
+    $labelTitle.Font = $UiFontBold
+    $labelTitle.ForeColor = [System.Drawing.Color]::White
+    $labelTitle.Location = New-Object System.Drawing.Point(24, $titleY)
+    $labelTitle.AutoSize = $true
+    $header.Controls.Add($labelTitle)
+
+    if ($Subtitle) {
+        $labelSubtitle = New-Object System.Windows.Forms.Label
+        $labelSubtitle.Text = $Subtitle
+        $labelSubtitle.ForeColor = [System.Drawing.Color]::White
+        $labelSubtitle.Location = New-Object System.Drawing.Point(24, 40)
+        $labelSubtitle.AutoSize = $true
+        $header.Controls.Add($labelSubtitle)
+    }
+
+    return $Height
 }
 
 function Get-MacAddress {
@@ -130,19 +167,7 @@ function Show-LoginForm {
     $form.Font = $UiFont
     $form.BackColor = [System.Drawing.Color]::White
 
-    $header = New-Object System.Windows.Forms.Panel
-    $header.Size = New-Object System.Drawing.Size(400, 70)
-    $header.Location = New-Object System.Drawing.Point(0, 0)
-    $header.BackColor = $AccentColor
-    $form.Controls.Add($header)
-
-    $labelTitle = New-Object System.Windows.Forms.Label
-    $labelTitle.Text = "W.I.P.E"
-    $labelTitle.Font = $UiFontBold
-    $labelTitle.ForeColor = [System.Drawing.Color]::White
-    $labelTitle.Location = New-Object System.Drawing.Point(24, 18)
-    $labelTitle.AutoSize = $true
-    $header.Controls.Add($labelTitle)
+    Add-HeaderBanner -Form $form -Title "W.I.P.E" -Width 400 -Height 70 | Out-Null
 
     $labelUser = New-Object System.Windows.Forms.Label
     $labelUser.Text = "Username"
@@ -192,119 +217,179 @@ function Show-LoginForm {
 }
 
 # --- Step 2: hostname / domain-join / task sequence selection ------------
-# Hostname and task sequence are skipped (shown read-only) if this MAC
-# already has an in-progress job (status "ready" - e.g. a retry after this
-# same machine got partway through a previous boot). Domain-join is always
-# confirmed fresh here regardless - the join credentials are never known
-# to the cloud, so there's nothing to reuse there anyway. There's no admin
-# job-scheduling step anywhere in this system - every job starts here.
+# Hostname and task sequence are pre-filled (and, on first visit, disabled
+# behind a "Resume previous deployment" choice) if this MAC already has an
+# in-progress job (status "ready" - e.g. a retry after this same machine
+# got partway through a previous boot) - picking "Edit selection" instead
+# enables both for a quick correction (e.g. a typo'd hostname) without
+# starting from a blank form. Domain-join is always confirmed fresh here
+# regardless - the join credentials are never known to the cloud, so
+# there's nothing to reuse there anyway. There's no admin job-scheduling
+# step anywhere in this system - every job starts here.
+#
+# -Existing re-populates the form from a previous call's return value
+# (used when the technician hits "Back" on Show-ConfirmForm) - when
+# provided, the resume/edit choice is skipped entirely since we're
+# already editing.
 
 function Show-SelectionForm {
-    param($AuthResponse)
+    param($AuthResponse, $Existing = $null)
+
+    $isPreStaged = $AuthResponse.status -eq "ready"
+    $showResumeChoice = $isPreStaged -and -not $Existing
+
+    # Precompute what to pre-fill, regardless of where the value came from.
+    $prefillHostname = if ($Existing) { $Existing.Hostname } elseif ($isPreStaged) { $AuthResponse.hostname }
+    $prefillTaskSequenceId = if ($Existing) { $Existing.TaskSequenceId } elseif ($isPreStaged) { $AuthResponse.taskSequenceId }
+    $prefillDomainJoin = if ($Existing) { [bool]$Existing.DomainJoin } else { [bool]$AuthResponse.domainJoin }
+    $prefillDomain = if ($Existing) { $Existing.Domain } else { $AuthResponse.domain }
+    $prefillDomainUser = if ($Existing) { $Existing.DomainUsername }
+    $prefillDomainPass = if ($Existing) { $Existing.DomainPassword }
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "W.I.P.E - Options"
-    $form.Size = New-Object System.Drawing.Size(460, 420)
+    $form.Size = New-Object System.Drawing.Size(460, $(if ($showResumeChoice) { 610 } else { 540 }))
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.Font = $UiFont
+    $form.BackColor = [System.Drawing.Color]::White
 
-    Add-BatteryLabel -Form $form -Right 440 -Y 15
+    Add-HeaderBanner -Form $form -Title "Deployment options" -Width 460 -Height 60 | Out-Null
+    Add-BatteryLabel -Form $form -Right 440 -Y 68
 
-    $isPreStaged = $AuthResponse.status -eq "ready"
-    $y = 15
+    $y = 80
+    $fieldsEnabled = $true
+
+    $radioResume = $null
+    $radioEdit = $null
+    if ($showResumeChoice) {
+        $radioResume = New-Object System.Windows.Forms.RadioButton
+        $radioResume.Text = "Resume previous deployment"
+        $radioResume.Location = New-Object System.Drawing.Point(24, $y)
+        $radioResume.AutoSize = $true
+        $radioResume.Checked = $true
+        $form.Controls.Add($radioResume)
+        $y += 26
+
+        $radioEdit = New-Object System.Windows.Forms.RadioButton
+        $radioEdit.Text = "Edit selection (fix a typo, pick a different task sequence)"
+        $radioEdit.Location = New-Object System.Drawing.Point(24, $y)
+        $radioEdit.AutoSize = $true
+        $form.Controls.Add($radioEdit)
+        $y += 40
+
+        $fieldsEnabled = $false
+    }
 
     $labelHostname = New-Object System.Windows.Forms.Label
     $labelHostname.Text = "Hostname"
-    $labelHostname.Location = New-Object System.Drawing.Point(20, $y)
+    $labelHostname.ForeColor = $MutedColor
+    $labelHostname.Location = New-Object System.Drawing.Point(24, $y)
     $labelHostname.AutoSize = $true
     $form.Controls.Add($labelHostname)
+    $y += 20
 
     $textHostname = New-Object System.Windows.Forms.TextBox
-    $textHostname.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $textHostname.Width = 260
-    if ($isPreStaged -and $AuthResponse.hostname) {
-        $textHostname.Text = $AuthResponse.hostname
-        $textHostname.Enabled = $false
-    }
+    $textHostname.Location = New-Object System.Drawing.Point(24, $y)
+    $textHostname.Width = 412
+    if ($prefillHostname) { $textHostname.Text = $prefillHostname }
+    $textHostname.Enabled = $fieldsEnabled
     $form.Controls.Add($textHostname)
-    $y += 35
+    $y += 39
 
     $labelTs = New-Object System.Windows.Forms.Label
     $labelTs.Text = "Task sequence"
-    $labelTs.Location = New-Object System.Drawing.Point(20, $y)
+    $labelTs.ForeColor = $MutedColor
+    $labelTs.Location = New-Object System.Drawing.Point(24, $y)
     $labelTs.AutoSize = $true
     $form.Controls.Add($labelTs)
+    $y += 20
 
-    $comboTs = $null
-    if ($isPreStaged) {
-        $labelTsValue = New-Object System.Windows.Forms.Label
-        $labelTsValue.Text = $AuthResponse.taskSequenceId
-        $labelTsValue.Location = New-Object System.Drawing.Point(150, $y)
-        $labelTsValue.AutoSize = $true
-        $form.Controls.Add($labelTsValue)
-    } else {
-        $comboTs = New-Object System.Windows.Forms.ComboBox
-        $comboTs.Location = New-Object System.Drawing.Point(150, ($y - 3))
-        $comboTs.Width = 260
-        $comboTs.DropDownStyle = "DropDownList"
-        foreach ($s in $AuthResponse.taskSequences) {
-            [void]$comboTs.Items.Add("$($s.label) - $($s.osProfileLabel)")
-        }
-        if ($comboTs.Items.Count -gt 0) { $comboTs.SelectedIndex = 0 }
-        $form.Controls.Add($comboTs)
+    $comboTs = New-Object System.Windows.Forms.ComboBox
+    $comboTs.Location = New-Object System.Drawing.Point(24, $y)
+    $comboTs.Width = 412
+    $comboTs.DropDownStyle = "DropDownList"
+    foreach ($s in $AuthResponse.taskSequences) {
+        [void]$comboTs.Items.Add("$($s.label) - $($s.osProfileLabel)")
     }
-    $y += 35
+    $preselectIndex = -1
+    if ($prefillTaskSequenceId) {
+        for ($i = 0; $i -lt $AuthResponse.taskSequences.Count; $i++) {
+            if ($AuthResponse.taskSequences[$i].id -eq $prefillTaskSequenceId) { $preselectIndex = $i; break }
+        }
+    }
+    $comboTs.SelectedIndex = if ($preselectIndex -ge 0) { $preselectIndex } elseif ($comboTs.Items.Count -gt 0) { 0 } else { -1 }
+    $comboTs.Enabled = $fieldsEnabled
+    $form.Controls.Add($comboTs)
+    $y += 39
+
+    if ($showResumeChoice) {
+        $onChoiceChanged = {
+            $editing = $radioEdit.Checked
+            $textHostname.Enabled = $editing
+            $comboTs.Enabled = $editing
+        }
+        $radioResume.Add_CheckedChanged($onChoiceChanged)
+        $radioEdit.Add_CheckedChanged($onChoiceChanged)
+    }
 
     $checkDomain = New-Object System.Windows.Forms.CheckBox
     $checkDomain.Text = "Join a domain"
-    $checkDomain.Location = New-Object System.Drawing.Point(20, $y)
+    $checkDomain.Location = New-Object System.Drawing.Point(24, $y)
     $checkDomain.AutoSize = $true
-    $checkDomain.Checked = [bool]$AuthResponse.domainJoin
+    $checkDomain.Checked = $prefillDomainJoin
     $form.Controls.Add($checkDomain)
-    $y += 30
+    $y += 32
 
     $labelDomain = New-Object System.Windows.Forms.Label
     $labelDomain.Text = "Domain name"
-    $labelDomain.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomain.ForeColor = $MutedColor
+    $labelDomain.Location = New-Object System.Drawing.Point(24, $y)
     $labelDomain.AutoSize = $true
     $form.Controls.Add($labelDomain)
+    $y += 20
 
     $textDomain = New-Object System.Windows.Forms.TextBox
-    $textDomain.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $textDomain.Width = 260
-    if ($AuthResponse.domain) { $textDomain.Text = $AuthResponse.domain }
+    $textDomain.Location = New-Object System.Drawing.Point(24, $y)
+    $textDomain.Width = 412
+    if ($prefillDomain) { $textDomain.Text = $prefillDomain }
     $textDomain.Enabled = $checkDomain.Checked
     $form.Controls.Add($textDomain)
-    $y += 32
+    $y += 39
 
     $labelDomainUser = New-Object System.Windows.Forms.Label
     $labelDomainUser.Text = "Domain username"
-    $labelDomainUser.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomainUser.ForeColor = $MutedColor
+    $labelDomainUser.Location = New-Object System.Drawing.Point(24, $y)
     $labelDomainUser.AutoSize = $true
     $form.Controls.Add($labelDomainUser)
+    $y += 20
 
     $textDomainUser = New-Object System.Windows.Forms.TextBox
-    $textDomainUser.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $textDomainUser.Width = 260
+    $textDomainUser.Location = New-Object System.Drawing.Point(24, $y)
+    $textDomainUser.Width = 412
+    if ($prefillDomainUser) { $textDomainUser.Text = $prefillDomainUser }
     $textDomainUser.Enabled = $checkDomain.Checked
     $form.Controls.Add($textDomainUser)
-    $y += 32
+    $y += 39
 
     $labelDomainPass = New-Object System.Windows.Forms.Label
     $labelDomainPass.Text = "Domain password"
-    $labelDomainPass.Location = New-Object System.Drawing.Point(35, $y)
+    $labelDomainPass.ForeColor = $MutedColor
+    $labelDomainPass.Location = New-Object System.Drawing.Point(24, $y)
     $labelDomainPass.AutoSize = $true
     $form.Controls.Add($labelDomainPass)
+    $y += 20
 
     $textDomainPass = New-Object System.Windows.Forms.TextBox
-    $textDomainPass.Location = New-Object System.Drawing.Point(150, ($y - 3))
-    $textDomainPass.Width = 260
+    $textDomainPass.Location = New-Object System.Drawing.Point(24, $y)
+    $textDomainPass.Width = 412
     $textDomainPass.UseSystemPasswordChar = $true
+    if ($prefillDomainPass) { $textDomainPass.Text = $prefillDomainPass }
     $textDomainPass.Enabled = $checkDomain.Checked
     $form.Controls.Add($textDomainPass)
-    $y += 40
+    $y += 46
 
     $checkDomain.Add_CheckedChanged({
         $textDomain.Enabled = $checkDomain.Checked
@@ -312,11 +397,10 @@ function Show-SelectionForm {
         $textDomainPass.Enabled = $checkDomain.Checked
     })
 
-    $btnOk = New-AccentButton -Text "Continue" -Location (New-Object System.Drawing.Point(300, $y)) -Width 120
+    $btnOk = New-AccentButton -Text "Continue" -Location (New-Object System.Drawing.Point(316, $y)) -Width 120
     $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $form.AcceptButton = $btnOk
     $form.Controls.Add($btnOk)
-    $form.Size = New-Object System.Drawing.Size(460, ($y + 90))
 
     if ($form.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
         return $null
@@ -326,12 +410,12 @@ function Show-SelectionForm {
         Show-ErrorBox "Enter a hostname for this device."
         return $null
     }
-    $taskSequenceId = if ($comboTs) {
-        if ($comboTs.SelectedIndex -lt 0) { Show-ErrorBox "Pick a task sequence."; return $null }
-        $AuthResponse.taskSequences[$comboTs.SelectedIndex].id
-    } else {
-        $AuthResponse.taskSequenceId
+    if ($comboTs.SelectedIndex -lt 0) {
+        Show-ErrorBox "Pick a task sequence."
+        return $null
     }
+    $taskSequenceId = $AuthResponse.taskSequences[$comboTs.SelectedIndex].id
+
     $domain = $null
     $domainUsername = $null
     $domainPassword = $null
@@ -355,29 +439,109 @@ function Show-SelectionForm {
     }
 }
 
-# --- Step 3: confirm + deploy, with a live progress log -------------------
+# --- Step 3: confirm before the destructive wipe -------------------------
+# One last look at what's about to happen, with a way back to Selection to
+# fix anything, before /api/deploy/select is ever called or disk 0 is
+# touched.
+
+function Show-ConfirmForm {
+    param($AuthResponse, $Selection)
+
+    $chosenSequence = $AuthResponse.taskSequences | Where-Object { $_.id -eq $Selection.TaskSequenceId } | Select-Object -First 1
+    $taskSequenceSummary = if ($chosenSequence) { "$($chosenSequence.label) ($($chosenSequence.osProfileLabel))" } else { $Selection.TaskSequenceId }
+    $domainSummary = if ($Selection.DomainJoin) { "Yes - $($Selection.Domain)" } else { "No" }
+
+    $rows = @(
+        @{ Label = "Hostname"; Value = $Selection.Hostname }
+        @{ Label = "Task sequence"; Value = $taskSequenceSummary }
+        @{ Label = "Join a domain"; Value = $domainSummary }
+    )
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "W.I.P.E - Confirm"
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.Font = $UiFont
+    $form.BackColor = [System.Drawing.Color]::White
+
+    Add-HeaderBanner -Form $form -Title "Confirm deployment" -Width 460 -Height 60 | Out-Null
+    Add-BatteryLabel -Form $form -Right 440 -Y 68
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point(24, 84)
+    $panel.Size = New-Object System.Drawing.Size(412, ($rows.Count * 40))
+    $panel.BackColor = $CardColor
+    $form.Controls.Add($panel)
+
+    $rowY = 10
+    foreach ($row in $rows) {
+        $labelKey = New-Object System.Windows.Forms.Label
+        $labelKey.Text = $row.Label
+        $labelKey.ForeColor = $MutedColor
+        $labelKey.Location = New-Object System.Drawing.Point(16, $rowY)
+        $labelKey.AutoSize = $true
+        $panel.Controls.Add($labelKey)
+
+        $labelVal = New-Object System.Windows.Forms.Label
+        $labelVal.Text = $row.Value
+        $labelVal.Location = New-Object System.Drawing.Point(170, $rowY)
+        $labelVal.AutoSize = $true
+        $panel.Controls.Add($labelVal)
+
+        $rowY += 34
+    }
+
+    $panelBottom = 84 + $panel.Height
+
+    $warning = New-Object System.Windows.Forms.Label
+    $warning.Text = "This wipes disk 0 completely and cannot be undone."
+    $warning.ForeColor = $WarningColor
+    $warning.Location = New-Object System.Drawing.Point(24, ($panelBottom + 16))
+    $warning.AutoSize = $true
+    $form.Controls.Add($warning)
+
+    $btnConfirm = New-AccentButton -Text "Confirm && Deploy" -Location (New-Object System.Drawing.Point(216, ($panelBottom + 50))) -Width 220
+    $btnConfirm.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.AcceptButton = $btnConfirm
+    $form.Controls.Add($btnConfirm)
+
+    $btnBack = New-Object System.Windows.Forms.Button
+    $btnBack.Text = "Back"
+    $btnBack.Location = New-Object System.Drawing.Point(24, ($panelBottom + 50))
+    $btnBack.Size = New-Object System.Drawing.Size(100, 32)
+    $btnBack.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $form.Controls.Add($btnBack)
+
+    $form.Size = New-Object System.Drawing.Size(460, ($panelBottom + 130))
+    $result = $form.ShowDialog()
+    return $result -eq [System.Windows.Forms.DialogResult]::OK
+}
+
+# --- Step 4: deploy, with a live progress log -----------------------------
+# Confirmation already happened in Show-ConfirmForm, so this starts the
+# (destructive) partition/download/apply sequence automatically as soon as
+# the form is shown - no second "Deploy" click needed. On failure, a
+# Retry button (hidden until then) re-runs the same steps.
 
 function Show-DeployForm {
     param($Deployment)
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "W.I.P.E - Deploying"
-    $form.Size = New-Object System.Drawing.Size(560, 380)
+    $form.Size = New-Object System.Drawing.Size(560, 420)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.Font = $UiFont
+    $form.BackColor = [System.Drawing.Color]::White
 
-    Add-BatteryLabel -Form $form -Right 540 -Y 15
-
-    $labelSummary = New-Object System.Windows.Forms.Label
-    $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.taskSequence)$(if ($Deployment.domainJoin) { " [join $($Deployment.domain)]" })"
-    $labelSummary.Location = New-Object System.Drawing.Point(20, 15)
-    $labelSummary.AutoSize = $true
-    $form.Controls.Add($labelSummary)
+    $subtitle = "$($Deployment.taskSequence)$(if ($Deployment.domainJoin) { " - join $($Deployment.domain)" })"
+    Add-HeaderBanner -Form $form -Title $Deployment.hostname -Subtitle $subtitle -Width 560 -Height 70 | Out-Null
+    Add-BatteryLabel -Form $form -Right 540 -Y 78
 
     $logBox = New-Object System.Windows.Forms.TextBox
-    $logBox.Location = New-Object System.Drawing.Point(20, 45)
+    $logBox.Location = New-Object System.Drawing.Point(20, 95)
     $logBox.Size = New-Object System.Drawing.Size(505, 220)
     $logBox.Multiline = $true
     $logBox.ScrollBars = "Vertical"
@@ -385,21 +549,22 @@ function Show-DeployForm {
     $form.Controls.Add($logBox)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(20, 275)
+    $progressBar.Location = New-Object System.Drawing.Point(20, 325)
     $progressBar.Size = New-Object System.Drawing.Size(505, 20)
     $progressBar.Style = "Continuous"
     $form.Controls.Add($progressBar)
 
-    $btnDeploy = New-AccentButton -Text "Deploy" -Location (New-Object System.Drawing.Point(400, 305)) -Width 125
-    $form.Controls.Add($btnDeploy)
+    $btnRetry = New-AccentButton -Text "Retry" -Location (New-Object System.Drawing.Point(400, 355)) -Width 125
+    $btnRetry.Visible = $false
+    $form.Controls.Add($btnRetry)
 
     function Write-Log([string]$Line) {
         $logBox.AppendText("$Line`r`n")
         $form.Refresh()
     }
 
-    $btnDeploy.Add_Click({
-        $btnDeploy.Enabled = $false
+    $runDeploy = {
+        $btnRetry.Visible = $false
         try {
             $progressBar.Value = 5
             Write-Log "Partitioning disk 0 (UEFI/GPT)..."
@@ -504,10 +669,13 @@ assign letter=W
             wpeutil reboot
         } catch {
             Write-Log "ERROR: $($_.Exception.Message)"
-            Show-ErrorBox "Deployment failed: $($_.Exception.Message)`r`n`r`nCheck the log, fix the issue, and click Deploy to retry."
-            $btnDeploy.Enabled = $true
+            Show-ErrorBox "Deployment failed: $($_.Exception.Message)`r`n`r`nCheck the log, fix the issue, and click Retry."
+            $btnRetry.Visible = $true
         }
-    })
+    }
+
+    $btnRetry.Add_Click({ & $runDeploy })
+    $form.Add_Shown({ & $runDeploy })
 
     $form.ShowDialog() | Out-Null
 }
@@ -538,11 +706,17 @@ while ($true) {
         continue
     }
 
-    # Domain-join credentials are never known to the cloud (see deploy.ts),
-    # so this form is always shown, even when this MAC already has an
-    # in-progress job - it just pre-fills/disables whatever was already
-    # decided on a previous boot.
-    $selection = Show-SelectionForm -AuthResponse $auth
+    # Selection <-> Confirm loop - "Back" on the confirm screen redisplays
+    # Selection with everything just entered preserved, rather than forcing
+    # re-login. Only leaving this loop with no selection at all (Cancel on
+    # Selection itself) falls through to re-login below.
+    $selection = $null
+    $confirmed = $false
+    while (-not $confirmed) {
+        $selection = Show-SelectionForm -AuthResponse $auth -Existing $selection
+        if (-not $selection) { break }
+        $confirmed = Show-ConfirmForm -AuthResponse $auth -Selection $selection
+    }
     if (-not $selection) { continue }
 
     try {

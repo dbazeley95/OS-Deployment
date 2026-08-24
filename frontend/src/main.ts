@@ -97,7 +97,7 @@ const afWizardSteps = Array.from(afWizard.querySelectorAll<HTMLElement>(".wizard
 const answerFileForm = document.querySelector<HTMLFormElement>("#answer-file-form")!;
 const afIdInput = document.querySelector<HTMLInputElement>("#af-id")!;
 const afLabelInput = document.querySelector<HTMLInputElement>("#af-label")!;
-const afUiLanguageInput = document.querySelector<HTMLInputElement>("#af-uilanguage")!;
+const afUiLanguageInput = document.querySelector<HTMLSelectElement>("#af-uilanguage")!;
 const afTimeZoneInput = document.querySelector<HTMLInputElement>("#af-timezone")!;
 const afOwnerInput = document.querySelector<HTMLInputElement>("#af-owner")!;
 const afOrgInput = document.querySelector<HTMLInputElement>("#af-org")!;
@@ -482,6 +482,10 @@ function resetUserForm() {
   userCancelBtn.hidden = true;
 }
 
+function notSet(value: string): string {
+  return value ? value : `<span class="not-set">Not set</span>`;
+}
+
 function renderWizardReview() {
   const profileLabel = tsProfileSelect.selectedOptions[0]?.textContent ?? tsProfileSelect.value;
   const stepsHtml = currentSteps.length
@@ -529,15 +533,16 @@ function openTaskSequenceWizard(sequence?: TaskSequence) {
 }
 
 function renderAnswerFileWizardReview() {
+  const languageLabel = afUiLanguageInput.selectedOptions[0]?.textContent ?? afUiLanguageInput.value;
   afReview.innerHTML = `
     <dl>
       <dt>ID</dt><dd class="mono">${afIdInput.value}</dd>
       <dt>Label</dt><dd>${afLabelInput.value}</dd>
-      <dt>UI language / locale</dt><dd>${afUiLanguageInput.value}</dd>
-      <dt>Time zone</dt><dd>${afTimeZoneInput.value || "—"}</dd>
-      <dt>Registered owner</dt><dd>${afOwnerInput.value || "—"}</dd>
-      <dt>Registered organization</dt><dd>${afOrgInput.value || "—"}</dd>
-      <dt>Product key</dt><dd>${afProductKeyInput.value || "—"}</dd>
+      <dt>UI language / locale</dt><dd>${languageLabel}</dd>
+      <dt>Time zone</dt><dd>${notSet(afTimeZoneInput.value)}</dd>
+      <dt>Registered owner</dt><dd>${notSet(afOwnerInput.value)}</dd>
+      <dt>Registered organization</dt><dd>${notSet(afOrgInput.value)}</dd>
+      <dt>Product key</dt><dd>${notSet(afProductKeyInput.value)}</dd>
       <dt>Skip OOBE prompts</dt><dd>${afSkipOobeInput.checked ? "Yes" : "No"}</dd>
     </dl>
   `;
@@ -564,7 +569,19 @@ function openAnswerFileWizard(answerFile?: AnswerFile) {
   if (answerFile) {
     afIdInput.value = answerFile.id;
     afLabelInput.value = answerFile.label;
+    afUiLanguageInput.querySelector('option[data-stale="true"]')?.remove();
     afUiLanguageInput.value = answerFile.options.uiLanguage;
+    if (afUiLanguageInput.value !== answerFile.options.uiLanguage) {
+      // Stored value isn't in the curated list (e.g. set via a direct API
+      // call before this was a dropdown) - show it rather than silently
+      // falling back to whatever option happens to be first.
+      const stale = document.createElement("option");
+      stale.value = answerFile.options.uiLanguage;
+      stale.textContent = answerFile.options.uiLanguage;
+      stale.dataset.stale = "true";
+      stale.selected = true;
+      afUiLanguageInput.prepend(stale);
+    }
     afTimeZoneInput.value = answerFile.options.timeZone;
     afOwnerInput.value = answerFile.options.registeredOwner;
     afOrgInput.value = answerFile.options.registeredOrganization;
@@ -916,7 +933,24 @@ profilesBody.addEventListener("click", async (e) => {
     (profileForm.elements.namedItem("label") as HTMLInputElement).value = profile.label;
     (profileForm.elements.namedItem("installWim") as HTMLInputElement).value = profile.installWim;
     (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
+    profileAnswerFileSelect.querySelector('option[data-stale="true"]')?.remove();
     profileAnswerFileSelect.value = profile.answerFile;
+    if (profileAnswerFileSelect.value !== profile.answerFile) {
+      // Stored r2Key matches no current answer file (deleted/renamed since) -
+      // the select would otherwise silently fall back to its first option,
+      // saving the wrong answer file with no indication anything changed.
+      const stale = document.createElement("option");
+      // Empty value (not the stale r2Key) so the select's `required`
+      // validity check actually flags this as unselected, forcing a real
+      // pick before the form can submit - a non-empty value here would
+      // satisfy `required` even while disabled and change nothing.
+      stale.value = "";
+      stale.textContent = `⚠ Missing answer file: ${profile.answerFile} - pick a replacement`;
+      stale.dataset.stale = "true";
+      stale.disabled = true;
+      stale.selected = true;
+      profileAnswerFileSelect.prepend(stale);
+    }
     profileSubmitBtn.textContent = "Save profile";
     profileCancelBtn.hidden = false;
   } else if (deleteId) {

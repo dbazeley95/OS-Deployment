@@ -73,17 +73,9 @@ deployRoute.post("/auth", async (c) => {
   const mac = body.mac.toLowerCase();
   const job = await getPendingJobForMac(c.env.DB, mac);
 
-  if (job?.task_sequence_id) {
-    const device = await getDevice(c.env.DB, mac);
-    return c.json({
-      status: "ready",
-      taskSequenceId: job.task_sequence_id,
-      hostname: device?.hostname ?? null,
-      domainJoin: Boolean(job.domain_join),
-      domain: job.domain,
-    });
-  }
-
+  // Computed unconditionally (not just for "choose") so DeployGui.ps1 always
+  // has the full list on hand, whether the technician resumes the pre-staged
+  // selection below or chooses to edit it instead.
   const sequences = await listTaskSequences(c.env.DB);
   const withLabels = await Promise.all(
     sequences.map(async (s) => ({
@@ -92,6 +84,19 @@ deployRoute.post("/auth", async (c) => {
       osProfileLabel: (await getProfile(c.env.DB, s.osProfileId))?.label ?? s.osProfileId,
     }))
   );
+
+  if (job?.task_sequence_id) {
+    const device = await getDevice(c.env.DB, mac);
+    return c.json({
+      status: "ready",
+      taskSequenceId: job.task_sequence_id,
+      hostname: device?.hostname ?? null,
+      domainJoin: Boolean(job.domain_join),
+      domain: job.domain,
+      taskSequences: withLabels,
+    });
+  }
+
   return c.json({ status: "choose", taskSequences: withLabels });
 });
 

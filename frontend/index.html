@@ -656,19 +656,50 @@
         width: 100%;
       }
 
-      #ts-review dl {
+      .review-grid {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+
+      .review-grid dl {
+        display: grid;
+        grid-template-columns: minmax(140px, 38%) 1fr;
         margin: 0;
         font-size: 0.9rem;
       }
 
-      #ts-review dt {
-        font-weight: 600;
-        color: var(--text-muted);
-        margin-top: 0.6rem;
+      .review-grid dt,
+      .review-grid dd {
+        padding: var(--space-3) var(--space-4);
+        border-top: 1px solid var(--border);
       }
 
-      #ts-review dd {
-        margin: 0.15rem 0 0;
+      .review-grid dt:first-of-type,
+      .review-grid dd:first-of-type {
+        border-top: none;
+      }
+
+      .review-grid dt {
+        font-weight: 600;
+        color: var(--text-muted);
+        grid-column: 1;
+      }
+
+      .review-grid dd {
+        margin: 0;
+        grid-column: 2;
+      }
+
+      .review-grid .not-set {
+        color: var(--text-muted);
+        font-style: italic;
+      }
+
+      .review-grid ol {
+        margin: 0;
+        padding-left: 1.1rem;
       }
 
       .wizard-nav {
@@ -1027,7 +1058,35 @@
           <div class="wizard-step" data-wizard-step="2" hidden>
             <div class="field">
               <label for="af-uilanguage">UI language / locale</label>
-              <input id="af-uilanguage" name="uiLanguage" value="en-US" required />
+              <select id="af-uilanguage" name="uiLanguage" required>
+                <option value="en-US" selected>English (United States)</option>
+                <option value="en-GB">English (United Kingdom)</option>
+                <option value="en-AU">English (Australia)</option>
+                <option value="en-CA">English (Canada)</option>
+                <option value="en-IE">English (Ireland)</option>
+                <option value="en-NZ">English (New Zealand)</option>
+                <option value="fr-FR">French (France)</option>
+                <option value="fr-CA">French (Canada)</option>
+                <option value="de-DE">German (Germany)</option>
+                <option value="es-ES">Spanish (Spain)</option>
+                <option value="es-MX">Spanish (Mexico)</option>
+                <option value="it-IT">Italian (Italy)</option>
+                <option value="pt-BR">Portuguese (Brazil)</option>
+                <option value="pt-PT">Portuguese (Portugal)</option>
+                <option value="nl-NL">Dutch (Netherlands)</option>
+                <option value="sv-SE">Swedish (Sweden)</option>
+                <option value="nb-NO">Norwegian Bokmål (Norway)</option>
+                <option value="da-DK">Danish (Denmark)</option>
+                <option value="fi-FI">Finnish (Finland)</option>
+                <option value="pl-PL">Polish (Poland)</option>
+                <option value="tr-TR">Turkish (Türkiye)</option>
+                <option value="ru-RU">Russian (Russia)</option>
+                <option value="ja-JP">Japanese (Japan)</option>
+                <option value="ko-KR">Korean (Korea)</option>
+                <option value="zh-CN">Chinese, Simplified (PRC)</option>
+                <option value="zh-TW">Chinese, Traditional (Taiwan)</option>
+                <option value="ar-SA">Arabic (Saudi Arabia)</option>
+              </select>
             </div>
             <div class="field">
               <label for="af-timezone">Time zone</label>
@@ -1052,7 +1111,7 @@
           </div>
 
           <div class="wizard-step" data-wizard-step="3" hidden>
-            <div id="af-review"></div>
+            <div id="af-review" class="review-grid"></div>
           </div>
 
           <div class="wizard-nav">
@@ -1150,7 +1209,7 @@
           </div>
 
           <div class="wizard-step" data-wizard-step="3" hidden>
-            <div id="ts-review"></div>
+            <div id="ts-review" class="review-grid"></div>
           </div>
 
           <div class="wizard-nav">

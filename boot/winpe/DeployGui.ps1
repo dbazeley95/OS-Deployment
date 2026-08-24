@@ -29,10 +29,11 @@ $WorkerBase = "https://api.osd.xcet.uk"
 # comboboxes; font and colors still need to be set per form/control.
 $UiFont = New-Object System.Drawing.Font("Segoe UI", 9)
 $UiFontBold = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
-$AccentColor = [System.Drawing.Color]::FromArgb(37, 99, 235)
+# Xavier Catholic Education Trust brand colors.
+$AccentColor = [System.Drawing.Color]::FromArgb(20, 33, 70)
 $MutedColor = [System.Drawing.Color]::FromArgb(107, 114, 128)
 $CardColor = [System.Drawing.Color]::FromArgb(247, 248, 250)
-$WarningColor = [System.Drawing.Color]::FromArgb(185, 28, 28)
+$WarningColor = [System.Drawing.Color]::FromArgb(196, 35, 42)
 
 function New-AccentButton {
     param([string]$Text, [System.Drawing.Point]$Location, [int]$Width = 120)
@@ -48,10 +49,31 @@ function New-AccentButton {
     return $btn
 }
 
-# Adds an accent-colored header banner (title + optional subtitle) to the
-# top of a form - the same treatment Show-LoginForm established, reused
-# across every screen for a consistent look. Returns the header's height
-# so callers know where their own content can start.
+# Fetched once (cached in script scope) and reused across every header
+# banner, rather than re-fetched per screen. Best-effort only: WinPE's
+# network may not be up yet at Show-LoginForm time, or the asset may be
+# missing - either way a missing logo must never block the actual
+# deployment, so any failure just leaves the header showing text alone.
+# $script:LogoImage is $null before the first attempt, $false after a
+# failed attempt (so it isn't retried every screen), or the decoded image.
+$script:LogoImage = $null
+function Get-LogoImage {
+    if ($null -ne $script:LogoImage) { return $script:LogoImage }
+    try {
+        $bytes = (Invoke-WebRequest -Uri "$WorkerBase/images/winpe/logo.png" -UseBasicParsing).Content
+        $stream = New-Object System.IO.MemoryStream(, $bytes)
+        $script:LogoImage = [System.Drawing.Image]::FromStream($stream)
+    } catch {
+        $script:LogoImage = $false
+    }
+    return $script:LogoImage
+}
+
+# Adds an accent-colored header banner (title + optional subtitle, plus
+# the brand logo when it's available) to the top of a form - the same
+# treatment Show-LoginForm established, reused across every screen for a
+# consistent look. Returns the header's height so callers know where
+# their own content can start.
 function Add-HeaderBanner {
     param($Form, [string]$Title, [string]$Subtitle = $null, [int]$Width, [int]$Height = 60)
 
@@ -61,13 +83,28 @@ function Add-HeaderBanner {
     $header.BackColor = $AccentColor
     $Form.Controls.Add($header)
 
+    $textX = 24
+    $logo = Get-LogoImage
+    if ($logo) {
+        $logoHeight = $Height - 16
+        $logoWidth = [int]($logoHeight * $logo.Width / $logo.Height)
+        $pictureBox = New-Object System.Windows.Forms.PictureBox
+        $pictureBox.Image = $logo
+        $pictureBox.SizeMode = "Zoom"
+        $pictureBox.Location = New-Object System.Drawing.Point(16, 8)
+        $pictureBox.Size = New-Object System.Drawing.Size($logoWidth, $logoHeight)
+        $pictureBox.BackColor = [System.Drawing.Color]::Transparent
+        $header.Controls.Add($pictureBox)
+        $textX = 16 + $logoWidth + 12
+    }
+
     $titleY = if ($Subtitle) { 10 } else { [int](($Height - 32) / 2) }
 
     $labelTitle = New-Object System.Windows.Forms.Label
     $labelTitle.Text = $Title
     $labelTitle.Font = $UiFontBold
     $labelTitle.ForeColor = [System.Drawing.Color]::White
-    $labelTitle.Location = New-Object System.Drawing.Point(24, $titleY)
+    $labelTitle.Location = New-Object System.Drawing.Point($textX, $titleY)
     $labelTitle.AutoSize = $true
     $header.Controls.Add($labelTitle)
 
@@ -75,7 +112,7 @@ function Add-HeaderBanner {
         $labelSubtitle = New-Object System.Windows.Forms.Label
         $labelSubtitle.Text = $Subtitle
         $labelSubtitle.ForeColor = [System.Drawing.Color]::White
-        $labelSubtitle.Location = New-Object System.Drawing.Point(24, 40)
+        $labelSubtitle.Location = New-Object System.Drawing.Point($textX, 40)
         $labelSubtitle.AutoSize = $true
         $header.Controls.Add($labelSubtitle)
     }

@@ -36,4 +36,12 @@ jobs:
             name="$(basename "$f")"
             echo "Uploading winpe/$name..."
             npx wrangler r2 object put "os-deployment-images/winpe/$name" --file "$f"
+            # Same-origin SHA256 companion - bootstrap.ps1/DeployGui.ps1 fetch
+            # this alongside the script to catch a corrupted or truncated
+            # download (a real WinPE network-boot failure mode). It's not
+            # tamper-proofing: anyone who could alter the script in R2 could
+            # alter this file too - see boot/winpe/README.md.
+            hash="$(sha256sum "$f" | cut -d' ' -f1)"
+            echo -n "$hash" > "/tmp/$name.sha256"
+            npx wrangler r2 object put "os-deployment-images/winpe/$name.sha256" --file "/tmp/$name.sha256" --content-type "text/plain"
           done

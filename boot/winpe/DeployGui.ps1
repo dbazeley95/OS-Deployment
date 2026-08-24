@@ -590,7 +590,18 @@ format quick fs=ntfs label="Windows"
 assign letter=W
 "@
             $diskpartScript | Out-File -FilePath "$env:TEMP\diskpart.txt" -Encoding ascii
-            diskpart /s "$env:TEMP\diskpart.txt" | Out-Null
+            $diskpartOutput = diskpart /s "$env:TEMP\diskpart.txt" 2>&1 | Out-String
+            # diskpart's own exit code, plus actually checking the W:/S:
+            # volumes it's supposed to create, both used to go unchecked
+            # here (output silently discarded) - a drive-letter collision
+            # with another volume (a known WinPE quirk: `clean`+`convert
+            # gpt` re-enumerates every disk's letters, not just this one)
+            # would previously fail silently, then bcdboot below would
+            # write boot files to whatever S: happened to resolve to - the
+            # image applies "successfully" but the machine won't boot.
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path "W:\") -or -not (Test-Path "S:\")) {
+                throw "diskpart didn't produce the expected W:/S: volumes (exit code $LASTEXITCODE). Output:`r`n$diskpartOutput"
+            }
             $progressBar.Value = 20
 
             Write-Log "Downloading install.wim..."
@@ -637,7 +648,10 @@ assign letter=W
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."
-            dism /Apply-Image /ImageFile:"W:\install.wim" /Index:$($Deployment.imageIndex) /ApplyDir:"W:\" | Out-Null
+            $dismOutput = dism /Apply-Image /ImageFile:"W:\install.wim" /Index:$($Deployment.imageIndex) /ApplyDir:"W:\" 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path "W:\Windows\System32\ntoskrnl.exe")) {
+                throw "dism /Apply-Image failed (exit code $LASTEXITCODE) or produced an incomplete Windows install. Output:`r`n$dismOutput"
+            }
             Remove-Item "W:\install.wim"
             $progressBar.Value = 85
 
@@ -668,7 +682,11 @@ assign letter=W
             $progressBar.Value = 92
 
             Write-Log "Writing boot files..."
-            bcdboot W:\Windows /s S: /f UEFI | Out-Null
+            $bcdbootOutput = bcdboot W:\Windows /s S: /f UEFI 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) {
+                throw "bcdboot failed (exit code $LASTEXITCODE) - boot files were not written to the EFI partition. Output:`r`n$bcdbootOutput"
+            }
+            Write-Log $bcdbootOutput.Trim()
             $progressBar.Value = 100
 
             Write-Log "Done. Rebooting in 5 seconds..."

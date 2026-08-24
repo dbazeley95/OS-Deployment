@@ -134,10 +134,19 @@ function Add-BatteryLabel {
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 30000
     $timer.Add_Tick({
-        $status = Get-BatteryStatus
-        if ($status) {
-            $label.Text = "Battery: $($status.Percent)% $(if ($status.Charging) { '(charging)' } else { '(on battery)' })"
-        }
+        # Deliberately swallows any error (WMI hiccup, disposed control, etc.)
+        # rather than letting it propagate: this Tick can fire re-entrantly
+        # from inside Application.DoEvents() calls elsewhere in the script
+        # (e.g. Show-DeployForm's download loop), and an uncaught exception
+        # here would otherwise bubble out of that DoEvents() call and get
+        # caught by whatever unrelated try/catch happens to be running at
+        # the time - showing up as a misleading, unrelated failure.
+        try {
+            $status = Get-BatteryStatus
+            if ($status) {
+                $label.Text = "Battery: $($status.Percent)% $(if ($status.Charging) { '(charging)' } else { '(on battery)' })"
+            }
+        } catch {}
     })
     $timer.Start()
     $Form.Add_FormClosed({ $timer.Stop() }) | Out-Null
@@ -668,8 +677,15 @@ assign letter=W
             $form.Close()
             wpeutil reboot
         } catch {
-            Write-Log "ERROR: $($_.Exception.Message)"
-            Show-ErrorBox "Deployment failed: $($_.Exception.Message)`r`n`r`nCheck the log, fix the issue, and click Retry."
+            # Line number + stack trace included deliberately: this exact
+            # deploy failure has recurred across several prior fix attempts
+            # with only a generic message to go on, which made each fix a
+            # guess. If it happens again, this pinpoints exactly where.
+            $errLine = $_.InvocationInfo.ScriptLineNumber
+            $errText = $_.InvocationInfo.Line.Trim()
+            Write-Log "ERROR (line ${errLine}): $($_.Exception.Message)"
+            Write-Log "  at: $errText"
+            Show-ErrorBox "Deployment failed (line ${errLine}): $($_.Exception.Message)`r`n`r`nAt: $errText`r`n`r`nCheck the log, fix the issue, and click Retry."
             $btnRetry.Visible = $true
         }
     }

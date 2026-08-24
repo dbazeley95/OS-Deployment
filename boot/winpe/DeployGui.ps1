@@ -341,9 +341,16 @@ function Show-DeployForm {
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Location = New-Object System.Drawing.Point(20, 275)
-    $progressBar.Size = New-Object System.Drawing.Size(505, 20)
+    $progressBar.Size = New-Object System.Drawing.Size(440, 20)
     $progressBar.Style = "Continuous"
     $form.Controls.Add($progressBar)
+
+    $labelPercent = New-Object System.Windows.Forms.Label
+    $labelPercent.Location = New-Object System.Drawing.Point(465, 275)
+    $labelPercent.Size = New-Object System.Drawing.Size(60, 20)
+    $labelPercent.TextAlign = "MiddleRight"
+    $labelPercent.ForeColor = $MutedColor
+    $form.Controls.Add($labelPercent)
 
     $btnDeploy = New-AccentButton -Text "Deploy" -Location (New-Object System.Drawing.Point(400, 305)) -Width 125
     $form.Controls.Add($btnDeploy)
@@ -375,7 +382,31 @@ assign letter=W
             $progressBar.Value = 20
 
             Write-Log "Downloading install.wim..."
-            Invoke-WebRequest -Uri $Deployment.installWim -OutFile "W:\install.wim"
+            # Invoke-WebRequest blocks with no progress callback - use WebClient's
+            # async download instead so the progress bar/percentage can update
+            # live. WebClient marshals its events back to this thread via the
+            # WindowsFormsSynchronizationContext the Forms message loop already
+            # installed; DoEvents below keeps that loop pumping while we wait.
+            $client = New-Object System.Net.WebClient
+            $downloadDone = $false
+            $downloadError = $null
+            $client.add_DownloadProgressChanged({
+                param($eventSender, $e)
+                $progressBar.Value = 20 + [int]($e.ProgressPercentage * 0.35)
+                $labelPercent.Text = "$($e.ProgressPercentage)%"
+            })
+            $client.add_DownloadFileCompleted({
+                param($eventSender, $e)
+                if ($e.Error) { $downloadError = $e.Error }
+                $downloadDone = $true
+            })
+            $client.DownloadFileAsync([Uri]$Deployment.installWim, "W:\install.wim")
+            while (-not $downloadDone) {
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 50
+            }
+            if ($downloadError) { throw $downloadError }
+            $labelPercent.Text = ""
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."

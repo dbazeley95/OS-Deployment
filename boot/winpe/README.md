@@ -72,7 +72,7 @@ foreach ($pkg in "WinPE-WMI", "WinPE-NetFx", "WinPE-Scripting", "WinPE-PowerShel
 # startnet.cmd already calls wpeinit by default, which brings up networking
 # before this line runs - just append the fetch-fresh bootstrap after it:
 Add-Content C:\WinPE_amd64\mount\Windows\System32\startnet.cmd `
-    "powershell -NoProfile -ExecutionPolicy Bypass -Command ""iwr https://api.osd.xcet.uk/images/winpe/DeployGui.ps1 -OutFile X:\DeployGui.ps1; & X:\DeployGui.ps1"""
+    "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -Command ""iwr https://api.osd.xcet.uk/images/winpe/DeployGui.ps1 -OutFile X:\DeployGui.ps1; & X:\DeployGui.ps1"""
 
 Dism /Unmount-Image /MountDir:C:\WinPE_amd64\mount /Commit
 ```

@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "boot/winpe/*.ps1"
+      - "boot/winpe/*.png"
       - ".github/workflows/sync-winpe-scripts.yml"
   workflow_dispatch:
 
@@ -44,4 +45,16 @@ jobs:
             hash="$(sha256sum "$f" | cut -d' ' -f1)"
             echo -n "$hash" > "/tmp/$name.sha256"
             npx wrangler r2 object put "os-deployment-images/winpe/$name.sha256" --file "/tmp/$name.sha256" --content-type "text/plain"
+          done
+      - name: Upload boot/winpe/*.png to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in ../boot/winpe/*.png; do
+            name="$(basename "$f")"
+            echo "Uploading winpe/$name..."
+            npx wrangler r2 object put "os-deployment-images/winpe/$name" --file "$f" --content-type "image/png"
           done

@@ -67,6 +67,45 @@ function Get-SerialNumber {
     (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
 }
 
+function Get-BatteryStatus {
+    # $null on a desktop (no Win32_Battery instance) - callers use that to
+    # skip showing anything rather than a misleading "0%".
+    $battery = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $battery) { return $null }
+    return @{
+        Percent = $battery.EstimatedChargeRemaining
+        Charging = $battery.BatteryStatus -in 6, 7, 8, 9
+    }
+}
+
+# Adds a small "Battery: NN% (charging/on battery)" label to the top-right of
+# a form, refreshed every 30s - only if a battery is actually present, so
+# desktops show nothing. Call after a form's other controls are added.
+function Add-BatteryLabel {
+    param($Form, [int]$Right, [int]$Y = 15)
+
+    $initial = Get-BatteryStatus
+    if (-not $initial) { return }
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.AutoSize = $true
+    $label.ForeColor = $MutedColor
+    $label.Text = "Battery: $($initial.Percent)% $(if ($initial.Charging) { '(charging)' } else { '(on battery)' })"
+    $label.Location = New-Object System.Drawing.Point(($Right - 160), $Y)
+    $Form.Controls.Add($label)
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 30000
+    $timer.Add_Tick({
+        $status = Get-BatteryStatus
+        if ($status) {
+            $label.Text = "Battery: $($status.Percent)% $(if ($status.Charging) { '(charging)' } else { '(on battery)' })"
+        }
+    })
+    $timer.Start()
+    $Form.Add_FormClosed({ $timer.Stop() }) | Out-Null
+}
+
 function Invoke-DeployApi {
     param([string]$Path, [hashtable]$Body)
     Invoke-RestMethod -Method Post -Uri "$WorkerBase$Path" -ContentType "application/json" -Body ($Body | ConvertTo-Json)
@@ -143,6 +182,8 @@ function Show-LoginForm {
     $labelMac.AutoSize = $true
     $form.Controls.Add($labelMac)
 
+    Add-BatteryLabel -Form $form -Right 380 -Y 78
+
     $result = $form.ShowDialog()
     if ($result -ne [System.Windows.Forms.DialogResult]::OK -or -not $textUser.Text) {
         return $null
@@ -168,6 +209,8 @@ function Show-SelectionForm {
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.Font = $UiFont
+
+    Add-BatteryLabel -Form $form -Right 440 -Y 15
 
     $isPreStaged = $AuthResponse.status -eq "ready"
     $y = 15
@@ -324,6 +367,8 @@ function Show-DeployForm {
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.Font = $UiFont
+
+    Add-BatteryLabel -Form $form -Right 540 -Y 15
 
     $labelSummary = New-Object System.Windows.Forms.Label
     $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.taskSequence)$(if ($Deployment.domainJoin) { " [join $($Deployment.domain)]" })"

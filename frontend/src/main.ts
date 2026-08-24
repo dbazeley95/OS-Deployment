@@ -97,7 +97,7 @@ const answerFileForm = document.querySelector<HTMLFormElement>("#answer-file-for
 const afIdInput = document.querySelector<HTMLInputElement>("#af-id")!;
 const afLabelInput = document.querySelector<HTMLInputElement>("#af-label")!;
 const afUiLanguageInput = document.querySelector<HTMLSelectElement>("#af-uilanguage")!;
-const afTimeZoneInput = document.querySelector<HTMLInputElement>("#af-timezone")!;
+const afTimeZoneInput = document.querySelector<HTMLSelectElement>("#af-timezone")!;
 const afOwnerInput = document.querySelector<HTMLInputElement>("#af-owner")!;
 const afOrgInput = document.querySelector<HTMLInputElement>("#af-org")!;
 const afProductKeyInput = document.querySelector<HTMLInputElement>("#af-productkey")!;
@@ -551,12 +551,15 @@ function openTaskSequenceWizard(sequence?: TaskSequence) {
 
 function renderAnswerFileWizardReview() {
   const languageLabel = afUiLanguageInput.selectedOptions[0]?.textContent ?? afUiLanguageInput.value;
+  // The select always has a meaningful label, even for the empty value
+  // ("Use Windows default"), so no notSet() fallback needed here.
+  const timeZoneLabel = afTimeZoneInput.selectedOptions[0]?.textContent ?? afTimeZoneInput.value;
   afReview.innerHTML = `
     <dl>
       <dt>ID</dt><dd class="mono">${afIdInput.value}</dd>
       <dt>Label</dt><dd>${afLabelInput.value}</dd>
       <dt>UI language / locale</dt><dd>${languageLabel}</dd>
-      <dt>Time zone</dt><dd>${notSet(afTimeZoneInput.value)}</dd>
+      <dt>Time zone</dt><dd>${timeZoneLabel}</dd>
       <dt>Registered owner</dt><dd>${notSet(afOwnerInput.value)}</dd>
       <dt>Registered organization</dt><dd>${notSet(afOrgInput.value)}</dd>
       <dt>Product key</dt><dd>${notSet(afProductKeyInput.value)}</dd>
@@ -599,7 +602,18 @@ function openAnswerFileWizard(answerFile?: AnswerFile) {
       stale.selected = true;
       afUiLanguageInput.prepend(stale);
     }
+    afTimeZoneInput.querySelector('option[data-stale="true"]')?.remove();
     afTimeZoneInput.value = answerFile.options.timeZone;
+    if (afTimeZoneInput.value !== answerFile.options.timeZone) {
+      // Same as the UI-language fallback above - shows a value set before
+      // this was a dropdown instead of silently swapping to another zone.
+      const staleTz = document.createElement("option");
+      staleTz.value = answerFile.options.timeZone;
+      staleTz.textContent = answerFile.options.timeZone;
+      staleTz.dataset.stale = "true";
+      staleTz.selected = true;
+      afTimeZoneInput.prepend(staleTz);
+    }
     afOwnerInput.value = answerFile.options.registeredOwner;
     afOrgInput.value = answerFile.options.registeredOrganization;
     afProductKeyInput.value = answerFile.options.productKey;

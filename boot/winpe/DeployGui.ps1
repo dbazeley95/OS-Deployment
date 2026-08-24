@@ -429,28 +429,34 @@ assign letter=W
             Write-Log "Downloading install.wim..."
             # Invoke-WebRequest blocks with no progress callback - use WebClient's
             # async download instead so the progress bar/percentage can update
-            # live. WebClient marshals its events back to this thread via the
-            # WindowsFormsSynchronizationContext the Forms message loop already
-            # installed; DoEvents below keeps that loop pumping while we wait.
+            # live. Its DownloadProgressChanged/DownloadFileCompleted handlers
+            # fire from a fresh pipeline context that can only see Script/Global
+            # scope, not this function's local variables (unlike a WinForms
+            # control event, e.g. btnDeploy's own Click handler above, which
+            # fires synchronously on the same thread/scope) - so stage what the
+            # handlers touch into $script: scope first.
+            $script:dlProgressBar = $progressBar
+            $script:dlPercentLabel = $labelPercent
+            $script:dlDone = $false
+            $script:dlError = $null
+
             $client = New-Object System.Net.WebClient
-            $downloadDone = $false
-            $downloadError = $null
             $client.add_DownloadProgressChanged({
                 param($eventSender, $e)
-                $progressBar.Value = 20 + [int]($e.ProgressPercentage * 0.35)
-                $labelPercent.Text = "$($e.ProgressPercentage)%"
+                $script:dlProgressBar.Value = 20 + [int]($e.ProgressPercentage * 0.35)
+                $script:dlPercentLabel.Text = "$($e.ProgressPercentage)%"
             })
             $client.add_DownloadFileCompleted({
                 param($eventSender, $e)
-                if ($e.Error) { $downloadError = $e.Error }
-                $downloadDone = $true
+                if ($e.Error) { $script:dlError = $e.Error }
+                $script:dlDone = $true
             })
             $client.DownloadFileAsync([Uri]$Deployment.installWim, "W:\install.wim")
-            while (-not $downloadDone) {
+            while (-not $script:dlDone) {
                 [System.Windows.Forms.Application]::DoEvents()
                 Start-Sleep -Milliseconds 50
             }
-            if ($downloadError) { throw $downloadError }
+            if ($script:dlError) { throw $script:dlError }
             $labelPercent.Text = ""
             $progressBar.Value = 55
 

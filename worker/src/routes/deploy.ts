@@ -45,7 +45,7 @@ async function deploymentPayload(
     hostname: device?.hostname ?? null,
     installWim: imageUrl(origin, profile.installWim),
     imageIndex: profile.imageIndex,
-    answerFileUrl: imageUrl(origin, profile.answerFile),
+    answerFileUrl: imageUrl(origin, sequence.answerFile),
     postActionScriptUrl: imageUrl(origin, "winpe/PostAction.ps1"),
     // "app" steps carry a downloadable installer URL; "builtin" steps are a
     // fixed action PostAction.ps1 already knows how to run by id (no file).

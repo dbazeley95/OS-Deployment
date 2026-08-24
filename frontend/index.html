@@ -133,7 +133,7 @@
 
       /*
        * Wraps a create/edit form that sits above a table inside the same
-       * card (OS Profiles, Apps, Users) - gives it its own bounded panel so
+       * card (Operating Systems, Apps, Users) - gives it its own bounded panel so
        * the space before the table is intentional, not stray whitespace.
        */
       .panel-form {
@@ -914,7 +914,7 @@
       <nav class="tabs" id="tabs" role="tablist">
         <button type="button" class="tab-btn" data-tab="dashboard" role="tab">Dashboard</button>
         <button type="button" class="tab-btn" data-tab="devices" role="tab">Devices</button>
-        <button type="button" class="tab-btn" data-tab="profiles" role="tab">OS Profiles</button>
+        <button type="button" class="tab-btn" data-tab="profiles" role="tab">Operating Systems</button>
         <button type="button" class="tab-btn" data-tab="answer-files" role="tab">Answer Files</button>
         <button type="button" class="tab-btn" data-tab="apps" role="tab">Apps</button>
         <button type="button" class="tab-btn" data-tab="task-sequences" role="tab">Task Sequences</button>
@@ -968,8 +968,8 @@
 
       <div class="tab-panel" data-tab-panel="profiles" hidden>
       <section class="card">
-        <h2>OS profiles</h2>
-        <p class="hint">The catalog the WinPE deployment GUI offers. Edit here - no code change or redeploy needed.</p>
+        <h2>Operating systems</h2>
+        <p class="hint">The Windows editions/WIMs the WinPE deployment GUI can apply - pick one per task sequence, along with an answer file, in the Task Sequences tab. Edit here - no code change or redeploy needed.</p>
         <form id="profile-form" class="technician-plus panel-form">
           <div class="field">
             <label for="profile-id">ID</label>
@@ -1006,17 +1006,13 @@
             <label for="profile-image-index">Image index</label>
             <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
           </div>
-          <div class="field">
-            <label for="profile-answer-file" title="Which generated answer file to hand WinPE for hostname and first-logon setup - manage these in the Answer Files tab">Answer file</label>
-            <select id="profile-answer-file" name="answerFile" required></select>
-          </div>
           <button type="submit" id="profile-submit">Add profile</button>
           <button type="button" id="profile-cancel" class="btn-secondary" hidden>Cancel</button>
         </form>
         <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>ID</th><th>Label</th><th>Install WIM</th><th>Index</th><th>Answer file</th><th></th></tr>
+            <tr><th>ID</th><th>Label</th><th>Install WIM</th><th>Index</th><th></th></tr>
           </thead>
           <tbody id="profiles-body"></tbody>
         </table>
@@ -1027,7 +1023,7 @@
       <div class="tab-panel" data-tab-panel="answer-files" hidden>
       <section class="card">
         <h2>Answer files</h2>
-        <p class="hint">Generated unattend.xml files an OS profile can pick from directly - no free-typed keys, no hand-authored XML.</p>
+        <p class="hint">Generated unattend.xml files a task sequence can pick from directly - no free-typed keys, no hand-authored XML.</p>
         <button type="button" id="af-new-btn" class="technician-plus new-item-btn">New answer file</button>
         <div class="table-wrap">
         <table>
@@ -1193,8 +1189,12 @@
               <input id="ts-label" name="label" placeholder="Windows 11 Pro - Sales laptop" required />
             </div>
             <div class="field">
-              <label for="ts-profile-select">OS profile</label>
+              <label for="ts-profile-select">Operating system</label>
               <select id="ts-profile-select" name="osProfileId" required></select>
+            </div>
+            <div class="field">
+              <label for="ts-answer-file-select" title="Which generated answer file to hand WinPE for hostname and first-logon setup - manage these in the Answer Files tab">Answer file</label>
+              <select id="ts-answer-file-select" name="answerFile" required></select>
             </div>
           </div>
 
@@ -1317,13 +1317,13 @@
           </section>
 
           <section class="help-section">
-            <h3>OS Profiles</h3>
+            <h3>Operating Systems</h3>
             <p>
-              The catalog the WinPE deployment wizard offers a technician on-device. Each profile pairs an
-              install.wim (upload one directly, or extract it straight from a Windows ISO in your browser - the ISO
-              itself is never uploaded) with an image index and an answer file.
+              The Windows editions the WinPE deployment wizard can apply. Each one pairs an install.wim (upload one
+              directly, or extract it straight from a Windows ISO in your browser - the ISO itself is never uploaded)
+              with an image index - pick one, along with an answer file, per task sequence in the Task Sequences tab.
             </p>
-            <img src="/help/profiles.png" alt="OS Profiles tab with the add-profile panel and catalog table" loading="lazy" />
+            <img src="/help/profiles.png" alt="Operating Systems tab with the add-profile panel and catalog table" loading="lazy" />
           </section>
 
           <section class="help-section">

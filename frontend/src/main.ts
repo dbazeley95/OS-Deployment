@@ -86,7 +86,6 @@ const profileIsoUploadBtn = document.querySelector<HTMLButtonElement>("#profile-
 const profileWimProgress = document.querySelector<HTMLElement>("#profile-wim-progress")!;
 const profileWimProgressBar = document.querySelector<HTMLProgressElement>("#profile-wim-progress-bar")!;
 const profileWimProgressText = document.querySelector<HTMLElement>("#profile-wim-progress-text")!;
-const profileAnswerFileSelect = document.querySelector<HTMLSelectElement>("#profile-answer-file")!;
 
 const answerFilesBody = document.querySelector<HTMLElement>("#answer-files-body")!;
 const afNewBtn = document.querySelector<HTMLButtonElement>("#af-new-btn")!;
@@ -125,6 +124,7 @@ const taskSequenceForm = document.querySelector<HTMLFormElement>("#task-sequence
 const tsIdInput = document.querySelector<HTMLInputElement>("#ts-id")!;
 const tsLabelInput = document.querySelector<HTMLInputElement>("#ts-label")!;
 const tsProfileSelect = document.querySelector<HTMLSelectElement>("#ts-profile-select")!;
+const tsAnswerFileSelect = document.querySelector<HTMLSelectElement>("#ts-answer-file-select")!;
 const tsStepSelect = document.querySelector<HTMLSelectElement>("#ts-step-select")!;
 const tsAddStepBtn = document.querySelector<HTMLButtonElement>("#ts-add-step")!;
 const tsStepsList = document.querySelector<HTMLOListElement>("#ts-steps-list")!;
@@ -281,7 +281,6 @@ async function loadProfilesTable() {
             <td>${p.label}</td>
             <td class="mono">${p.installWim} (#${p.imageIndex})</td>
             <td class="mono">${p.imageIndex}</td>
-            <td class="mono">${p.answerFile}</td>
             <td class="row-actions">
               <button type="button" class="technician-plus" data-edit-profile="${p.id}">Edit</button>
               <button type="button" class="danger admin-only" data-delete-profile="${p.id}">Delete</button>
@@ -319,9 +318,7 @@ async function loadTsProfileOptions() {
 
 async function loadAnswerFileSelectOptions() {
   const answerFiles = await api.listCatalogAnswerFiles();
-  profileAnswerFileSelect.innerHTML = answerFiles
-    .map((a) => `<option value="${a.r2Key}">${a.label}</option>`)
-    .join("");
+  tsAnswerFileSelect.innerHTML = answerFiles.map((a) => `<option value="${a.r2Key}">${a.label}</option>`).join("");
 }
 
 function answerFileOptionsSummary(o: AnswerFileOptions): string {
@@ -488,6 +485,7 @@ function notSet(value: string): string {
 
 function renderWizardReview() {
   const profileLabel = tsProfileSelect.selectedOptions[0]?.textContent ?? tsProfileSelect.value;
+  const answerFileLabel = tsAnswerFileSelect.selectedOptions[0]?.textContent ?? tsAnswerFileSelect.value;
   const stepsHtml = currentSteps.length
     ? `<ol>${currentSteps.map((s) => `<li>${stepLabels[stepKey(s)] ?? s.id}</li>`).join("")}</ol>`
     : `<p class="empty">No steps - just applies the OS image.</p>`;
@@ -495,7 +493,8 @@ function renderWizardReview() {
     <dl>
       <dt>ID</dt><dd class="mono">${tsIdInput.value}</dd>
       <dt>Label</dt><dd>${tsLabelInput.value}</dd>
-      <dt>OS profile</dt><dd>${profileLabel}</dd>
+      <dt>Operating system</dt><dd>${profileLabel}</dd>
+      <dt>Answer file</dt><dd>${answerFileLabel}</dd>
       <dt>Steps</dt><dd>${stepsHtml}</dd>
     </dl>
   `;
@@ -519,10 +518,28 @@ function openTaskSequenceWizard(sequence?: TaskSequence) {
   tsIdInput.disabled = Boolean(sequence);
   tsWizardTitle.textContent = sequence ? "Edit task sequence" : "New task sequence";
   tsSubmitBtn.textContent = sequence ? "Save task sequence" : "Add task sequence";
+  tsAnswerFileSelect.querySelector('option[data-stale="true"]')?.remove();
   if (sequence) {
     tsIdInput.value = sequence.id;
     tsLabelInput.value = sequence.label;
     tsProfileSelect.value = sequence.osProfileId;
+    tsAnswerFileSelect.value = sequence.answerFile;
+    if (tsAnswerFileSelect.value !== sequence.answerFile) {
+      // Stored r2Key matches no current answer file (deleted/renamed since) -
+      // the select would otherwise silently fall back to its first option,
+      // saving the wrong answer file with no indication anything changed.
+      const stale = document.createElement("option");
+      // Empty value (not the stale r2Key) so the select's `required`
+      // validity check actually flags this as unselected, forcing a real
+      // pick before the form can submit - a non-empty value here would
+      // satisfy `required` even while disabled and change nothing.
+      stale.value = "";
+      stale.textContent = `⚠ Missing answer file: ${sequence.answerFile} - pick a replacement`;
+      stale.dataset.stale = "true";
+      stale.disabled = true;
+      stale.selected = true;
+      tsAnswerFileSelect.prepend(stale);
+    }
     currentSteps = [...sequence.steps];
   } else {
     currentSteps = [];
@@ -604,7 +621,6 @@ profileForm.addEventListener("submit", async (e) => {
     label: String(data.get("label")),
     installWim: String(data.get("installWim")),
     imageIndex: Number(data.get("imageIndex")),
-    answerFile: String(data.get("answerFile")),
   };
   try {
     if (editingProfileId) {
@@ -933,24 +949,6 @@ profilesBody.addEventListener("click", async (e) => {
     (profileForm.elements.namedItem("label") as HTMLInputElement).value = profile.label;
     (profileForm.elements.namedItem("installWim") as HTMLInputElement).value = profile.installWim;
     (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
-    profileAnswerFileSelect.querySelector('option[data-stale="true"]')?.remove();
-    profileAnswerFileSelect.value = profile.answerFile;
-    if (profileAnswerFileSelect.value !== profile.answerFile) {
-      // Stored r2Key matches no current answer file (deleted/renamed since) -
-      // the select would otherwise silently fall back to its first option,
-      // saving the wrong answer file with no indication anything changed.
-      const stale = document.createElement("option");
-      // Empty value (not the stale r2Key) so the select's `required`
-      // validity check actually flags this as unselected, forcing a real
-      // pick before the form can submit - a non-empty value here would
-      // satisfy `required` even while disabled and change nothing.
-      stale.value = "";
-      stale.textContent = `⚠ Missing answer file: ${profile.answerFile} - pick a replacement`;
-      stale.dataset.stale = "true";
-      stale.disabled = true;
-      stale.selected = true;
-      profileAnswerFileSelect.prepend(stale);
-    }
     profileSubmitBtn.textContent = "Save profile";
     profileCancelBtn.hidden = false;
   } else if (deleteId) {
@@ -1068,6 +1066,7 @@ taskSequenceForm.addEventListener("submit", async (e) => {
     id: tsIdInput.value,
     label: tsLabelInput.value,
     osProfileId: tsProfileSelect.value,
+    answerFile: tsAnswerFileSelect.value,
     steps: [...currentSteps],
   };
   try {

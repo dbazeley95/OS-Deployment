@@ -30,7 +30,6 @@ export interface OsProfile {
   label: string;
   installWim: string;
   imageIndex: number;
-  answerFile: string;
 }
 
 export type InstallKind = "msi" | "exe" | "script";
@@ -53,6 +52,7 @@ export interface TaskSequence {
   id: string;
   label: string;
   osProfileId: string;
+  answerFile: string;
   steps: TaskSequenceStep[];
 }
 

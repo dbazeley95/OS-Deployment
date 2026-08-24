@@ -51,8 +51,8 @@ export const catalogRoute = new Hono<{ Bindings: Bindings; Variables: Variables 
 
 function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
   const b = body as Partial<OsProfileInput> | null;
-  if (!b?.id || !b.label || !b.installWim || !b.answerFile) {
-    return { error: "id, label, installWim, and answerFile are required" };
+  if (!b?.id || !b.label || !b.installWim) {
+    return { error: "id, label, and installWim are required" };
   }
   if (typeof b.imageIndex !== "number" || !Number.isInteger(b.imageIndex)) {
     return { error: "imageIndex must be an integer" };
@@ -62,7 +62,6 @@ function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
     label: b.label,
     installWim: b.installWim,
     imageIndex: b.imageIndex,
-    answerFile: b.answerFile,
   };
 }
 
@@ -146,13 +145,13 @@ function isValidStep(s: unknown): s is TaskSequenceStep {
 
 function parseTaskSequenceInput(body: unknown): TaskSequenceInput | { error: string } {
   const b = body as Partial<TaskSequenceInput> | null;
-  if (!b?.id || !b.label || !b.osProfileId) {
-    return { error: "id, label, and osProfileId are required" };
+  if (!b?.id || !b.label || !b.osProfileId || !b.answerFile) {
+    return { error: "id, label, osProfileId, and answerFile are required" };
   }
   if (b.steps !== undefined && (!Array.isArray(b.steps) || !b.steps.every(isValidStep))) {
     return { error: "steps must be an array of {kind: 'app'|'builtin', id: string}" };
   }
-  return { id: b.id, label: b.label, osProfileId: b.osProfileId, steps: b.steps ?? [] };
+  return { id: b.id, label: b.label, osProfileId: b.osProfileId, answerFile: b.answerFile, steps: b.steps ?? [] };
 }
 
 catalogRoute.get("/builtin-actions", (c) => c.json(BUILTIN_ACTIONS));

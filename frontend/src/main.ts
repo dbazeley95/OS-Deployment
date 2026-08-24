@@ -74,8 +74,18 @@ const devicesBody = document.querySelector<HTMLElement>("#devices-body")!;
 const tsNoAppsHint = document.querySelector<HTMLElement>("#ts-no-apps-hint")!;
 
 const profilesBody = document.querySelector<HTMLElement>("#profiles-body")!;
+const profileNewBtn = document.querySelector<HTMLButtonElement>("#profile-new-btn")!;
+const profileWizard = document.querySelector<HTMLDialogElement>("#profile-wizard")!;
+const profileWizardTitle = document.querySelector<HTMLElement>("#profile-wizard-title")!;
+const profileWizardStepLabel = document.querySelector<HTMLElement>("#profile-wizard-step-label")!;
+const profileWizardSteps = Array.from(profileWizard.querySelectorAll<HTMLElement>(".wizard-step"));
+const profileReview = document.querySelector<HTMLElement>("#profile-review")!;
+const profileBackBtn = document.querySelector<HTMLButtonElement>("#profile-back-btn")!;
+const profileNextBtn = document.querySelector<HTMLButtonElement>("#profile-next-btn")!;
 const profileForm = document.querySelector<HTMLFormElement>("#profile-form")!;
 const profileIdInput = document.querySelector<HTMLInputElement>("#profile-id")!;
+const profileLabelInput = document.querySelector<HTMLInputElement>("#profile-label")!;
+const profileImageIndexInput = document.querySelector<HTMLInputElement>("#profile-image-index")!;
 const profileSubmitBtn = document.querySelector<HTMLButtonElement>("#profile-submit")!;
 const profileCancelBtn = document.querySelector<HTMLButtonElement>("#profile-cancel")!;
 const profileSourceTypeSelect = document.querySelector<HTMLSelectElement>("#profile-source-type")!;
@@ -166,6 +176,8 @@ let wizardStep = 1;
 const WIZARD_STEP_COUNT = 3;
 let afWizardStep = 1;
 const AF_WIZARD_STEP_COUNT = 3;
+let profileWizardStep = 1;
+const PROFILE_WIZARD_STEP_COUNT = 3;
 const expandedDeviceMacs = new Set<string>();
 
 /**
@@ -461,17 +473,54 @@ function updateProfileSourceFields() {
   profileFileSharePathInput.required = isFileShare;
 }
 
-function resetProfileForm() {
-  editingProfileId = null;
+function renderProfileWizardReview() {
+  const isFileShare = profileSourceTypeSelect.value === "fileshare";
+  const sourceLabel = profileSourceTypeSelect.selectedOptions[0]?.textContent ?? profileSourceTypeSelect.value;
+  const sourceValue = isFileShare ? profileFileSharePathInput.value : profileInstallWimInput.value;
+  profileReview.innerHTML = `
+    <dl>
+      <dt>ID</dt><dd class="mono">${profileIdInput.value}</dd>
+      <dt>Label</dt><dd>${profileLabelInput.value}</dd>
+      <dt>Source</dt><dd>${sourceLabel}</dd>
+      <dt>${isFileShare ? "Network path" : "Install WIM (R2 key)"}</dt><dd class="mono">${notSet(sourceValue)}</dd>
+      <dt>Image index</dt><dd>${profileImageIndexInput.value}</dd>
+    </dl>
+  `;
+}
+
+function showProfileWizardStep(step: number) {
+  profileWizardStep = step;
+  for (const el of profileWizardSteps) {
+    el.hidden = Number(el.dataset.wizardStep) !== step;
+  }
+  profileWizardStepLabel.textContent = `Step ${step} of ${PROFILE_WIZARD_STEP_COUNT} - ${["Basics", "Source", "Review"][step - 1]}`;
+  profileBackBtn.hidden = step === 1;
+  profileNextBtn.hidden = step === PROFILE_WIZARD_STEP_COUNT;
+  profileSubmitBtn.hidden = step !== PROFILE_WIZARD_STEP_COUNT;
+  if (step === PROFILE_WIZARD_STEP_COUNT) renderProfileWizardReview();
+}
+
+function openProfileWizard(profile?: OsProfile) {
   profileForm.reset();
-  profileIdInput.disabled = false;
-  profileSubmitBtn.textContent = "Add profile";
-  profileCancelBtn.hidden = true;
   profileWimUploadBtn.disabled = true;
   profileIsoUploadBtn.disabled = true;
   profileWimProgress.hidden = true;
   profileWimProgressBar.value = 0;
+  editingProfileId = profile?.id ?? null;
+  profileIdInput.disabled = Boolean(profile);
+  profileWizardTitle.textContent = profile ? "Edit operating system" : "New operating system";
+  profileSubmitBtn.textContent = profile ? "Save operating system" : "Add operating system";
+  if (profile) {
+    profileIdInput.value = profile.id;
+    profileLabelInput.value = profile.label;
+    profileSourceTypeSelect.value = profile.sourceType;
+    profileInstallWimInput.value = profile.installWim ?? "";
+    profileFileSharePathInput.value = profile.fileSharePath ?? "";
+    profileImageIndexInput.value = String(profile.imageIndex);
+  }
   updateProfileSourceFields();
+  showProfileWizardStep(1);
+  profileWizard.showModal();
 }
 
 function resetAppForm() {
@@ -660,14 +709,47 @@ profileForm.addEventListener("submit", async (e) => {
     } else {
       await api.createCatalogProfile(profile);
     }
-    resetProfileForm();
+    profileWizard.close();
     await refresh();
   } catch (err) {
     showError(err);
   }
 });
 
-profileCancelBtn.addEventListener("click", resetProfileForm);
+profileNewBtn.addEventListener("click", () => {
+  errorEl.textContent = "";
+  openProfileWizard();
+});
+
+profileNextBtn.addEventListener("click", () => {
+  if (profileWizardStep === 1) {
+    if (!profileIdInput.checkValidity()) {
+      profileIdInput.reportValidity();
+      return;
+    }
+    if (!profileLabelInput.checkValidity()) {
+      profileLabelInput.reportValidity();
+      return;
+    }
+  }
+  if (profileWizardStep === 2) {
+    const isFileShare = profileSourceTypeSelect.value === "fileshare";
+    const sourceInput = isFileShare ? profileFileSharePathInput : profileInstallWimInput;
+    if (!sourceInput.checkValidity()) {
+      sourceInput.reportValidity();
+      return;
+    }
+    if (!profileImageIndexInput.checkValidity()) {
+      profileImageIndexInput.reportValidity();
+      return;
+    }
+  }
+  showProfileWizardStep(profileWizardStep + 1);
+});
+
+profileBackBtn.addEventListener("click", () => showProfileWizardStep(profileWizardStep - 1));
+
+profileCancelBtn.addEventListener("click", () => profileWizard.close());
 
 profileWimFileInput.addEventListener("change", () => {
   profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
@@ -975,17 +1057,7 @@ profilesBody.addEventListener("click", async (e) => {
     const profiles = await api.listCatalogProfiles();
     const profile = profiles.find((p) => p.id === editId);
     if (!profile) return;
-    editingProfileId = profile.id;
-    profileIdInput.value = profile.id;
-    profileIdInput.disabled = true;
-    (profileForm.elements.namedItem("label") as HTMLInputElement).value = profile.label;
-    profileSourceTypeSelect.value = profile.sourceType;
-    profileInstallWimInput.value = profile.installWim ?? "";
-    profileFileSharePathInput.value = profile.fileSharePath ?? "";
-    updateProfileSourceFields();
-    (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
-    profileSubmitBtn.textContent = "Save profile";
-    profileCancelBtn.hidden = false;
+    openProfileWizard(profile);
   } else if (deleteId) {
     if (!confirm(`Delete profile "${deleteId}"?`)) return;
     try {

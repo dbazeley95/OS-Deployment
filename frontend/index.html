@@ -984,59 +984,7 @@
       <section class="card">
         <h2>Operating systems</h2>
         <p class="hint">The Windows editions/WIMs the WinPE deployment GUI can apply - pick one per task sequence, along with an answer file, in the Task Sequences tab. Edit here - no code change or redeploy needed.</p>
-        <form id="profile-form" class="technician-plus panel-form">
-          <div class="field">
-            <label for="profile-id">ID</label>
-            <input id="profile-id" name="id" placeholder="windows-11-25h2-pro" required />
-          </div>
-          <div class="field">
-            <label for="profile-label">Label</label>
-            <input id="profile-label" name="label" placeholder="Windows 11 25H2 Pro" required />
-          </div>
-          <div class="field">
-            <label for="profile-source-type">Source</label>
-            <select id="profile-source-type" name="sourceType">
-              <option value="r2">Cloud storage (R2)</option>
-              <option value="fileshare">Network file share (UNC path)</option>
-            </select>
-          </div>
-          <div id="profile-r2-fields">
-          <div class="field">
-            <label for="profile-install-wim" title="Where install.wim lives in storage - fills in automatically when you upload or extract one below">Install WIM (R2 key)</label>
-            <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
-          </div>
-          <div class="field field-wide">
-            <label for="profile-wim-file">Or upload a WIM directly</label>
-            <div class="upload-row">
-              <input id="profile-wim-file" type="file" accept=".wim" />
-              <button type="button" id="profile-wim-upload-btn" disabled>Upload</button>
-            </div>
-          </div>
-          <div class="field field-wide">
-            <label for="profile-iso-file">Or extract install.wim from a Windows ISO</label>
-            <div class="upload-row">
-              <input id="profile-iso-file" type="file" accept=".iso" />
-              <button type="button" id="profile-iso-upload-btn" disabled>Extract &amp; upload</button>
-            </div>
-            <p class="hint">Reads the ISO's filesystem in your browser and uploads only install.wim/install.esd - the full ISO is never uploaded.</p>
-            <div class="upload-progress" id="profile-wim-progress" hidden>
-              <progress id="profile-wim-progress-bar" max="100" value="0"></progress>
-              <span id="profile-wim-progress-text"></span>
-            </div>
-          </div>
-          </div>
-          <div class="field field-wide" id="profile-fileshare-field" hidden>
-            <label for="profile-file-share-path" title="Read directly off the network using the same credentials DeployGui.ps1 already collects for domain-join - useful when several machines are building at once, so they pull over the LAN instead of repeatedly through R2 over the internet">Network path (UNC)</label>
-            <input id="profile-file-share-path" name="fileSharePath" placeholder="\\server\share\windows-11-25h2\install.wim" />
-            <p class="hint">Requires the technician to enable "Join a domain" in the deploy wizard, since that's where the read credentials come from - there's no separate prompt for this.</p>
-          </div>
-          <div class="field">
-            <label for="profile-image-index">Image index</label>
-            <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
-          </div>
-          <button type="submit" id="profile-submit">Add profile</button>
-          <button type="button" id="profile-cancel" class="btn-secondary" hidden>Cancel</button>
-        </form>
+        <button type="button" id="profile-new-btn" class="technician-plus new-item-btn">New operating system</button>
         <div class="table-wrap">
         <table>
           <thead>
@@ -1046,6 +994,79 @@
         </table>
         </div>
       </section>
+
+      <dialog id="profile-wizard">
+        <form id="profile-form" class="wizard-form">
+          <h2 id="profile-wizard-title">New operating system</h2>
+          <p class="hint" id="profile-wizard-step-label">Step 1 of 3 - Basics</p>
+
+          <div class="wizard-step" data-wizard-step="1">
+            <div class="field">
+              <label for="profile-id">ID</label>
+              <input id="profile-id" name="id" placeholder="windows-11-25h2-pro" required />
+            </div>
+            <div class="field">
+              <label for="profile-label">Label</label>
+              <input id="profile-label" name="label" placeholder="Windows 11 25H2 Pro" required />
+            </div>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="2" hidden>
+            <div class="field">
+              <label for="profile-source-type">Source</label>
+              <select id="profile-source-type" name="sourceType">
+                <option value="r2">Cloud storage (R2)</option>
+                <option value="fileshare">Network file share (UNC path)</option>
+              </select>
+            </div>
+            <div id="profile-r2-fields">
+            <div class="field">
+              <label for="profile-install-wim" title="Where install.wim lives in storage - fills in automatically when you upload or extract one below">Install WIM (R2 key)</label>
+              <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
+            </div>
+            <div class="field field-wide">
+              <label for="profile-wim-file">Or upload a WIM directly</label>
+              <div class="upload-row">
+                <input id="profile-wim-file" type="file" accept=".wim" />
+                <button type="button" id="profile-wim-upload-btn" disabled>Upload</button>
+              </div>
+            </div>
+            <div class="field field-wide">
+              <label for="profile-iso-file">Or extract install.wim from a Windows ISO</label>
+              <div class="upload-row">
+                <input id="profile-iso-file" type="file" accept=".iso" />
+                <button type="button" id="profile-iso-upload-btn" disabled>Extract &amp; upload</button>
+              </div>
+              <p class="hint">Reads the ISO's filesystem in your browser and uploads only install.wim/install.esd - the full ISO is never uploaded.</p>
+              <div class="upload-progress" id="profile-wim-progress" hidden>
+                <progress id="profile-wim-progress-bar" max="100" value="0"></progress>
+                <span id="profile-wim-progress-text"></span>
+              </div>
+            </div>
+            </div>
+            <div class="field field-wide" id="profile-fileshare-field" hidden>
+              <label for="profile-file-share-path" title="Read directly off the network using the same credentials DeployGui.ps1 already collects for domain-join - useful when several machines are building at once, so they pull over the LAN instead of repeatedly through R2 over the internet">Network path (UNC)</label>
+              <input id="profile-file-share-path" name="fileSharePath" placeholder="\\server\share\windows-11-25h2\install.wim" />
+              <p class="hint">Requires the technician to enable "Join a domain" in the deploy wizard, since that's where the read credentials come from - there's no separate prompt for this.</p>
+            </div>
+            <div class="field">
+              <label for="profile-image-index">Image index</label>
+              <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
+            </div>
+          </div>
+
+          <div class="wizard-step" data-wizard-step="3" hidden>
+            <div id="profile-review" class="review-grid"></div>
+          </div>
+
+          <div class="wizard-nav">
+            <button type="button" id="profile-back-btn" class="btn-secondary" hidden>Back</button>
+            <button type="button" id="profile-next-btn">Next</button>
+            <button type="submit" id="profile-submit" hidden>Add operating system</button>
+            <button type="button" id="profile-cancel" class="btn-secondary">Cancel</button>
+          </div>
+        </form>
+      </dialog>
       </div>
 
       <div class="tab-panel" data-tab-panel="answer-files" hidden>

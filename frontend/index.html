@@ -632,8 +632,22 @@
         letter-spacing: -0.01em;
       }
 
-      dialog #ts-wizard-step-label {
+      dialog #ts-wizard-step-label,
+      dialog #af-wizard-step-label {
         margin: 0 0 1.1rem;
+      }
+
+      /* The generic `form` rule below (display: flex, wrap, bottom-aligned -
+         built for flat panel-forms like Apps/Operating Systems where each
+         field is its own flex item) doesn't fit a multi-step wizard's form:
+         its direct children are whole sections (title, step label, the
+         current step's fields, the nav buttons), which need to stack full-
+         width in document order, not wrap and bottom-align like field pairs
+         do. `.wizard-form` overrides back to a plain vertical stack. */
+      .wizard-form {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
       }
 
       .wizard-step {
@@ -1036,7 +1050,7 @@
       </section>
 
       <dialog id="af-wizard">
-        <form id="answer-file-form">
+        <form id="answer-file-form" class="wizard-form">
           <h2 id="af-wizard-title">New answer file</h2>
           <p class="hint" id="af-wizard-step-label">Step 1 of 3 - Basics</p>
 
@@ -1086,7 +1100,40 @@
             </div>
             <div class="field">
               <label for="af-timezone">Time zone</label>
-              <input id="af-timezone" name="timeZone" placeholder="e.g. Pacific Standard Time" />
+              <select id="af-timezone" name="timeZone">
+                <option value="">Use Windows default</option>
+                <option value="GMT Standard Time" selected>GMT Standard Time (London, Dublin)</option>
+                <option value="Greenwich Standard Time">Greenwich Standard Time (Monrovia, Reykjavik)</option>
+                <option value="W. Europe Standard Time">W. Europe Standard Time (Berlin, Amsterdam, Rome)</option>
+                <option value="Central Europe Standard Time">Central Europe Standard Time (Warsaw, Prague)</option>
+                <option value="Central European Standard Time">Central European Standard Time (Sarajevo, Zagreb)</option>
+                <option value="Romance Standard Time">Romance Standard Time (Paris, Madrid, Brussels)</option>
+                <option value="E. Europe Standard Time">E. Europe Standard Time (Bucharest)</option>
+                <option value="FLE Standard Time">FLE Standard Time (Helsinki, Kyiv)</option>
+                <option value="Turkey Standard Time">Turkey Standard Time (Istanbul)</option>
+                <option value="Russian Standard Time">Russian Standard Time (Moscow)</option>
+                <option value="Arabian Standard Time">Arabian Standard Time (Abu Dhabi, Riyadh)</option>
+                <option value="India Standard Time">India Standard Time (Mumbai, New Delhi)</option>
+                <option value="China Standard Time">China Standard Time (Beijing, Shanghai)</option>
+                <option value="SE Asia Standard Time">SE Asia Standard Time (Bangkok, Jakarta)</option>
+                <option value="Singapore Standard Time">Singapore Standard Time (Kuala Lumpur)</option>
+                <option value="Tokyo Standard Time">Tokyo Standard Time (Osaka, Sapporo)</option>
+                <option value="Korea Standard Time">Korea Standard Time (Seoul)</option>
+                <option value="AUS Eastern Standard Time">AUS Eastern Standard Time (Sydney, Melbourne)</option>
+                <option value="AUS Central Standard Time">AUS Central Standard Time (Adelaide)</option>
+                <option value="W. Australia Standard Time">W. Australia Standard Time (Perth)</option>
+                <option value="New Zealand Standard Time">New Zealand Standard Time (Auckland)</option>
+                <option value="South Africa Standard Time">South Africa Standard Time (Johannesburg)</option>
+                <option value="Atlantic Standard Time">Atlantic Standard Time (Halifax)</option>
+                <option value="Eastern Standard Time">Eastern Standard Time (New York, Toronto)</option>
+                <option value="Central Standard Time">Central Standard Time (Chicago, Dallas)</option>
+                <option value="Mountain Standard Time">Mountain Standard Time (Denver)</option>
+                <option value="Pacific Standard Time">Pacific Standard Time (Los Angeles, Seattle)</option>
+                <option value="Alaskan Standard Time">Alaskan Standard Time (Anchorage)</option>
+                <option value="Hawaiian Standard Time">Hawaiian Standard Time (Honolulu)</option>
+                <option value="SA Eastern Standard Time">SA Eastern Standard Time (Sao Paulo, Buenos Aires)</option>
+                <option value="Central Brazilian Standard Time">Central Brazilian Standard Time (Manaus)</option>
+              </select>
             </div>
             <div class="field">
               <label for="af-owner">Registered owner</label>
@@ -1175,7 +1222,7 @@
       </section>
 
       <dialog id="ts-wizard">
-        <form id="task-sequence-form">
+        <form id="task-sequence-form" class="wizard-form">
           <h2 id="ts-wizard-title">New task sequence</h2>
           <p class="hint" id="ts-wizard-step-label">Step 1 of 3 - Basics</p>
 
@@ -1276,7 +1323,7 @@
 
       <dialog id="change-password-dialog">
         <h2>Change my password</h2>
-        <form id="change-password-form">
+        <form id="change-password-form" class="wizard-form">
           <div class="field">
             <label for="change-password-new">New password</label>
             <input id="change-password-new" name="newPassword" type="password" required minlength="8" />

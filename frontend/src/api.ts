@@ -25,10 +25,14 @@ export interface DeploymentJob {
   updated_at: string;
 }
 
+export type OsProfileSourceType = "r2" | "fileshare";
+
 export interface OsProfile {
   id: string;
   label: string;
-  installWim: string;
+  sourceType: OsProfileSourceType;
+  installWim: string | null;
+  fileSharePath: string | null;
   imageIndex: number;
 }
 

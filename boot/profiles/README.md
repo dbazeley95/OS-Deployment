@@ -11,8 +11,14 @@ row in the `task_sequences` D1 table (migration
 `worker/src/lib/taskSequences.ts`/`answerFiles.ts`). The OS profile itself
 (`os_profiles` D1 table, migration `0004_catalog.sql`, "Operating Systems"
 section, `worker/src/lib/profiles.ts`) only carries the WIM and image index
-now - upload it into the R2 bucket at the path its `installWim` key
-references, using `scripts/upload-image.sh`.
+now. Its WIM source is either R2 (upload it into the bucket at the path its
+`installWim` key references, using `scripts/upload-image.sh`) or a Windows
+file share UNC path (migration `0013_fileshare_wim_source.sql`) - useful when
+several machines are building at once, so `DeployGui.ps1` pulls over the LAN
+instead of repeatedly through R2 over the internet. A file-share-sourced
+profile is read using the domain-join credentials the wizard already
+collects, so it can only be used by a task sequence deployed with "Join a
+domain" enabled - there's no separate credential prompt for it.
 
 ## Technician auth
 

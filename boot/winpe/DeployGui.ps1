@@ -572,6 +572,47 @@ function Show-DeployForm {
         $form.Refresh()
     }
 
+    # Shared by both install.wim sources (R2 over HTTPS, or a network file
+    # share read as a local/UNC file) - reads $SourceStream synchronously on
+    # this same thread, calling DoEvents() each chunk to stay responsive, the
+    # same proven-safe pattern used for dism's progress below. $ProgressMin/
+    # $ProgressScale map the source's own 0-100% onto a sub-range of the
+    # overall progress bar (20-55, same as before this was extracted).
+    function Copy-StreamWithProgress {
+        param(
+            [System.IO.Stream]$SourceStream,
+            [long]$TotalBytes,
+            [string]$DestPath,
+            [string]$LogPrefix,
+            [int]$ProgressMin,
+            [double]$ProgressScale
+        )
+        $fileStream = [System.IO.File]::Create($DestPath)
+        try {
+            $buffer = New-Object byte[] 65536
+            $totalRead = 0
+            $lastPercent = -1
+            while (($read = $SourceStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $fileStream.Write($buffer, 0, $read)
+                $totalRead += $read
+                $percent = if ($TotalBytes -gt 0) { [int](($totalRead / $TotalBytes) * 100) } else { 0 }
+                if ($percent -ne $lastPercent) {
+                    $lastPercent = $percent
+                    $progressBar.Value = $ProgressMin + [int]($percent * $ProgressScale)
+                    $text = $logBox.Text
+                    $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
+                    $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
+                    $logBox.Text = "$prefix" + "$LogPrefix $percent%`r`n"
+                    $logBox.SelectionStart = $logBox.Text.Length
+                    $logBox.ScrollToCaret()
+                }
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+        } finally {
+            $fileStream.Close()
+        }
+    }
+
     $runDeploy = {
         $btnRetry.Visible = $false
         try {
@@ -604,47 +645,73 @@ assign letter=W
             }
             $progressBar.Value = 20
 
-            Write-Log "Downloading install.wim..."
-            # Invoke-WebRequest/WebClient's async download both block or fire
-            # events off-thread with no reliable way back into this function's
-            # scope from WinPE's PowerShell - so read the stream manually in a
-            # loop on this same thread instead, calling DoEvents() each chunk
-            # to keep the window responsive. That keeps every UI update
-            # ($progressBar/$logBox) in the exact same thread/scope as the
-            # diskpart/dism calls around it, which is already proven to work.
+            if ($Deployment.sourceType -eq "fileshare") {
+                # Alternative to R2 for when several machines are building at
+                # once - pulls install.wim over the LAN from a Windows file
+                # share instead of repeatedly through the Worker/R2 over the
+                # internet. Authenticated with the same credentials already
+                # collected for domain-join (never a separate prompt), so
+                # this source requires "Join a domain" to have been enabled -
+                # fail clearly up front rather than let `net use` fail
+                # obscurely with no credentials at all.
+                if (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
+                    throw "This task sequence's operating system is served from a network file share, which needs domain credentials to read. Go back and enable 'Join a domain', then try again."
+                }
+                if ($Deployment.fileSharePath -notmatch '^(\\\\[^\\]+\\[^\\]+)') {
+                    throw "Operating system file share path '$($Deployment.fileSharePath)' doesn't look like a valid UNC path (\\server\share\...)."
+                }
+                $shareRoot = $matches[1]
+                Write-Log "Connecting to $shareRoot..."
+                # net use (not New-SmbMapping) for compatibility - the SmbShare
+                # module isn't guaranteed present in a minimal WinPE image,
+                # while net.exe is a core tool every WinPE build already has.
+                # The password is briefly visible as a process argument as a
+                # result - a similar, already-accepted tradeoff to how this
+                # script already handles domain-join credentials elsewhere.
+                # Quoted explicitly (not just a bare variable/subexpression)
+                # so a password or username containing spaces is passed as
+                # one argument to net.exe, not word-split apart.
+                $netUseOutput = net use $shareRoot "$($Deployment.domainPassword)" "/user:$($Deployment.domainUsername)" 2>&1 | Out-String
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Couldn't connect to file share '$shareRoot' (exit code $LASTEXITCODE). Output:`r`n$netUseOutput"
+                }
+                try {
+                    Write-Log "Downloading install.wim from file share..."
+                    $totalBytes = (Get-Item -LiteralPath $Deployment.fileSharePath).Length
+                    $sourceStream = [System.IO.File]::OpenRead($Deployment.fileSharePath)
+                    try {
+                        Copy-StreamWithProgress -SourceStream $sourceStream -TotalBytes $totalBytes -DestPath "W:\install.wim" `
+                            -LogPrefix "Downloading install.wim..." -ProgressMin 20 -ProgressScale 0.35
+                    } finally {
+                        $sourceStream.Close()
+                    }
+                } finally {
+                    net use $shareRoot /delete /y 2>&1 | Out-Null
+                }
+            } else {
+                Write-Log "Downloading install.wim..."
+                # Invoke-WebRequest/WebClient's async download both block or
+                # fire events off-thread with no reliable way back into this
+                # function's scope from WinPE's PowerShell - so Copy-
+                # StreamWithProgress reads the response stream manually
+                # instead, on this same thread, which is already proven to
+                # work (the diskpart/dism calls around it use the same
+                # UI-thread-only approach).
+                $request = [System.Net.WebRequest]::Create([Uri]$Deployment.installWim)
+                $response = $request.GetResponse()
+                $totalBytes = $response.ContentLength
+                $responseStream = $response.GetResponseStream()
+                try {
+                    Copy-StreamWithProgress -SourceStream $responseStream -TotalBytes $totalBytes -DestPath "W:\install.wim" `
+                        -LogPrefix "Downloading install.wim..." -ProgressMin 20 -ProgressScale 0.35
+                } finally {
+                    $responseStream.Close()
+                    $response.Close()
+                }
+            }
             # The progress bar tracks overall deployment progress throughout
             # (5/20/55/85/92/100 below) - only the log line shows the
             # download's own 0-100%, so the two numbers never look mismatched.
-            $request = [System.Net.WebRequest]::Create([Uri]$Deployment.installWim)
-            $response = $request.GetResponse()
-            $totalBytes = $response.ContentLength
-            $responseStream = $response.GetResponseStream()
-            $fileStream = [System.IO.File]::Create("W:\install.wim")
-            try {
-                $buffer = New-Object byte[] 65536
-                $totalRead = 0
-                $lastPercent = -1
-                while (($read = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-                    $fileStream.Write($buffer, 0, $read)
-                    $totalRead += $read
-                    $percent = if ($totalBytes -gt 0) { [int](($totalRead / $totalBytes) * 100) } else { 0 }
-                    if ($percent -ne $lastPercent) {
-                        $lastPercent = $percent
-                        $progressBar.Value = 20 + [int]($percent * 0.35)
-                        $text = $logBox.Text
-                        $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
-                        $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
-                        $logBox.Text = "$prefix" + "Downloading install.wim... $percent%`r`n"
-                        $logBox.SelectionStart = $logBox.Text.Length
-                        $logBox.ScrollToCaret()
-                    }
-                    [System.Windows.Forms.Application]::DoEvents()
-                }
-            } finally {
-                $fileStream.Close()
-                $responseStream.Close()
-                $response.Close()
-            }
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."

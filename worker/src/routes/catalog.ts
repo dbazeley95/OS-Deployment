@@ -51,8 +51,18 @@ export const catalogRoute = new Hono<{ Bindings: Bindings; Variables: Variables 
 
 function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
   const b = body as Partial<OsProfileInput> | null;
-  if (!b?.id || !b.label || !b.installWim) {
-    return { error: "id, label, and installWim are required" };
+  if (!b?.id || !b.label) {
+    return { error: "id and label are required" };
+  }
+  const sourceType = b.sourceType ?? "r2";
+  if (sourceType !== "r2" && sourceType !== "fileshare") {
+    return { error: "sourceType must be 'r2' or 'fileshare'" };
+  }
+  if (sourceType === "r2" && !b.installWim) {
+    return { error: "installWim is required when sourceType is 'r2'" };
+  }
+  if (sourceType === "fileshare" && !b.fileSharePath?.startsWith("\\\\")) {
+    return { error: "fileSharePath is required when sourceType is 'fileshare', and must be a UNC path (\\\\server\\share\\...)" };
   }
   if (typeof b.imageIndex !== "number" || !Number.isInteger(b.imageIndex)) {
     return { error: "imageIndex must be an integer" };
@@ -60,7 +70,9 @@ function parseProfileInput(body: unknown): OsProfileInput | { error: string } {
   return {
     id: b.id,
     label: b.label,
-    installWim: b.installWim,
+    sourceType,
+    installWim: sourceType === "r2" ? b.installWim! : null,
+    fileSharePath: sourceType === "fileshare" ? b.fileSharePath! : null,
     imageIndex: b.imageIndex,
   };
 }

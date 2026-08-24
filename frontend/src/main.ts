@@ -78,7 +78,11 @@ const profileForm = document.querySelector<HTMLFormElement>("#profile-form")!;
 const profileIdInput = document.querySelector<HTMLInputElement>("#profile-id")!;
 const profileSubmitBtn = document.querySelector<HTMLButtonElement>("#profile-submit")!;
 const profileCancelBtn = document.querySelector<HTMLButtonElement>("#profile-cancel")!;
+const profileSourceTypeSelect = document.querySelector<HTMLSelectElement>("#profile-source-type")!;
+const profileR2Fields = document.querySelector<HTMLElement>("#profile-r2-fields")!;
+const profileFileShareField = document.querySelector<HTMLElement>("#profile-fileshare-field")!;
 const profileInstallWimInput = document.querySelector<HTMLInputElement>("#profile-install-wim")!;
+const profileFileSharePathInput = document.querySelector<HTMLInputElement>("#profile-file-share-path")!;
 const profileWimFileInput = document.querySelector<HTMLInputElement>("#profile-wim-file")!;
 const profileWimUploadBtn = document.querySelector<HTMLButtonElement>("#profile-wim-upload-btn")!;
 const profileIsoFileInput = document.querySelector<HTMLInputElement>("#profile-iso-file")!;
@@ -279,7 +283,7 @@ async function loadProfilesTable() {
           (p) => `<tr>
             <td class="mono">${p.id}</td>
             <td>${p.label}</td>
-            <td class="mono">${p.installWim} (#${p.imageIndex})</td>
+            <td class="mono">${p.sourceType === "fileshare" ? `Share: ${p.fileSharePath}` : p.installWim}</td>
             <td class="mono">${p.imageIndex}</td>
             <td class="row-actions">
               <button type="button" class="technician-plus" data-edit-profile="${p.id}">Edit</button>
@@ -449,6 +453,14 @@ async function refresh() {
   }
 }
 
+function updateProfileSourceFields() {
+  const isFileShare = profileSourceTypeSelect.value === "fileshare";
+  profileR2Fields.hidden = isFileShare;
+  profileFileShareField.hidden = !isFileShare;
+  profileInstallWimInput.required = !isFileShare;
+  profileFileSharePathInput.required = isFileShare;
+}
+
 function resetProfileForm() {
   editingProfileId = null;
   profileForm.reset();
@@ -459,6 +471,7 @@ function resetProfileForm() {
   profileIsoUploadBtn.disabled = true;
   profileWimProgress.hidden = true;
   profileWimProgressBar.value = 0;
+  updateProfileSourceFields();
 }
 
 function resetAppForm() {
@@ -626,14 +639,19 @@ function openAnswerFileWizard(answerFile?: AnswerFile) {
   afWizard.showModal();
 }
 
+profileSourceTypeSelect.addEventListener("change", updateProfileSourceFields);
+
 profileForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorEl.textContent = "";
   const data = new FormData(profileForm);
+  const sourceType = data.get("sourceType") as OsProfile["sourceType"];
   const profile: OsProfile = {
     id: String(data.get("id")),
     label: String(data.get("label")),
-    installWim: String(data.get("installWim")),
+    sourceType,
+    installWim: sourceType === "r2" ? String(data.get("installWim")) : null,
+    fileSharePath: sourceType === "fileshare" ? String(data.get("fileSharePath")) : null,
     imageIndex: Number(data.get("imageIndex")),
   };
   try {
@@ -961,7 +979,10 @@ profilesBody.addEventListener("click", async (e) => {
     profileIdInput.value = profile.id;
     profileIdInput.disabled = true;
     (profileForm.elements.namedItem("label") as HTMLInputElement).value = profile.label;
-    (profileForm.elements.namedItem("installWim") as HTMLInputElement).value = profile.installWim;
+    profileSourceTypeSelect.value = profile.sourceType;
+    profileInstallWimInput.value = profile.installWim ?? "";
+    profileFileSharePathInput.value = profile.fileSharePath ?? "";
+    updateProfileSourceFields();
     (profileForm.elements.namedItem("imageIndex") as HTMLInputElement).value = String(profile.imageIndex);
     profileSubmitBtn.textContent = "Save profile";
     profileCancelBtn.hidden = false;

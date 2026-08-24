@@ -994,6 +994,14 @@
             <input id="profile-label" name="label" placeholder="Windows 11 25H2 Pro" required />
           </div>
           <div class="field">
+            <label for="profile-source-type">Source</label>
+            <select id="profile-source-type" name="sourceType">
+              <option value="r2">Cloud storage (R2)</option>
+              <option value="fileshare">Network file share (UNC path)</option>
+            </select>
+          </div>
+          <div id="profile-r2-fields">
+          <div class="field">
             <label for="profile-install-wim" title="Where install.wim lives in storage - fills in automatically when you upload or extract one below">Install WIM (R2 key)</label>
             <input id="profile-install-wim" name="installWim" placeholder="windows-11-25h2/sources/install.wim" required />
           </div>
@@ -1016,6 +1024,12 @@
               <span id="profile-wim-progress-text"></span>
             </div>
           </div>
+          </div>
+          <div class="field field-wide" id="profile-fileshare-field" hidden>
+            <label for="profile-file-share-path" title="Read directly off the network using the same credentials DeployGui.ps1 already collects for domain-join - useful when several machines are building at once, so they pull over the LAN instead of repeatedly through R2 over the internet">Network path (UNC)</label>
+            <input id="profile-file-share-path" name="fileSharePath" placeholder="\\server\share\windows-11-25h2\install.wim" />
+            <p class="hint">Requires the technician to enable "Join a domain" in the deploy wizard, since that's where the read credentials come from - there's no separate prompt for this.</p>
+          </div>
           <div class="field">
             <label for="profile-image-index">Image index</label>
             <input id="profile-image-index" name="imageIndex" type="number" min="1" placeholder="1" required />
@@ -1026,7 +1040,7 @@
         <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>ID</th><th>Label</th><th>Install WIM</th><th>Index</th><th></th></tr>
+            <tr><th>ID</th><th>Label</th><th>Source</th><th>Index</th><th></th></tr>
           </thead>
           <tbody id="profiles-body"></tbody>
         </table>
@@ -1366,9 +1380,12 @@
           <section class="help-section">
             <h3>Operating Systems</h3>
             <p>
-              The Windows editions the WinPE deployment wizard can apply. Each one pairs an install.wim (upload one
-              directly, or extract it straight from a Windows ISO in your browser - the ISO itself is never uploaded)
-              with an image index - pick one, along with an answer file, per task sequence in the Task Sequences tab.
+              The Windows editions the WinPE deployment wizard can apply. Each one pairs a WIM source with an image
+              index - pick one, along with an answer file, per task sequence in the Task Sequences tab. The source is
+              either cloud storage (upload one directly, or extract it straight from a Windows ISO in your browser -
+              the ISO itself is never uploaded) or a network file share UNC path, useful when several machines are
+              building at once so they pull over the LAN instead of repeatedly through R2 over the internet - the
+              file share is read using the same credentials the wizard collects for domain-join.
             </p>
             <img src="/help/profiles.png" alt="Operating Systems tab with the add-profile panel and catalog table" loading="lazy" />
           </section>

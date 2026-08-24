@@ -43,7 +43,14 @@ async function deploymentPayload(
     domainJoin,
     domain: domainJoin ? (domain ?? null) : undefined,
     hostname: device?.hostname ?? null,
-    installWim: imageUrl(origin, profile.installWim),
+    // "r2": installWim is a Worker-hosted URL, same as always. "fileshare":
+    // installWim is null and fileSharePath carries the raw UNC path instead -
+    // DeployGui.ps1 reads it directly off the network (authenticated with
+    // the domain-join credentials it already collects) rather than over
+    // HTTP, so no Worker/R2 URL is needed or possible for that source.
+    sourceType: profile.sourceType,
+    installWim: profile.sourceType === "r2" ? imageUrl(origin, profile.installWim!) : null,
+    fileSharePath: profile.sourceType === "fileshare" ? profile.fileSharePath : null,
     imageIndex: profile.imageIndex,
     answerFileUrl: imageUrl(origin, sequence.answerFile),
     postActionScriptUrl: imageUrl(origin, "winpe/PostAction.ps1"),

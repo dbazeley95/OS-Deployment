@@ -70,9 +70,12 @@ foreach ($pkg in "WinPE-WMI", "WinPE-NetFx", "WinPE-Scripting", "WinPE-PowerShel
 }
 
 # startnet.cmd already calls wpeinit by default, which brings up networking
-# before this line runs - just append the fetch-fresh bootstrap after it:
+# before this line runs - just append the fetch-fresh bootstrap after it.
+# This fetches bootstrap.ps1 rather than DeployGui.ps1 directly - bootstrap.ps1
+# fetches DeployGui.ps1 itself and checks it against a same-origin SHA256
+# before running it (see "Integrity check" below).
 Add-Content C:\WinPE_amd64\mount\Windows\System32\startnet.cmd `
-    "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -Command ""iwr https://api.osd.xcet.uk/images/winpe/DeployGui.ps1 -OutFile X:\DeployGui.ps1; & X:\DeployGui.ps1"""
+    "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -Command ""iwr https://api.osd.xcet.uk/images/winpe/bootstrap.ps1 -OutFile X:\bootstrap.ps1; & X:\bootstrap.ps1"""
 
 Dism /Unmount-Image /MountDir:C:\WinPE_amd64\mount /Commit
 ```
@@ -88,8 +91,27 @@ the mounted image before unmounting (`Dism /Add-Driver`).
 
 If the GUI errors or is closed, WinPE drops back to a command prompt (from
 `startnet.cmd` completing) — re-run it manually with the same
-`iwr ...; & X:\DeployGui.ps1` command to retry, which also picks up any
+`iwr ...; & X:\bootstrap.ps1` command to retry, which also picks up any
 script update pushed since the machine booted.
+
+## Integrity check
+
+`bootstrap.ps1` (not `DeployGui.ps1` itself) is what `startnet.cmd`
+actually fetches and runs - it downloads `DeployGui.ps1`, fetches a
+same-origin SHA256 companion (`DeployGui.ps1.sha256`, uploaded to R2
+alongside the script by `.github/workflows/sync-winpe-scripts.yml`), and
+refuses to run it if the hashes don't match. `DeployGui.ps1` does the same
+for `PostAction.ps1` before writing it to the target disk.
+
+This guards against a corrupted or truncated download - a real WinPE
+network-boot failure mode - not deliberate tampering: anyone who could
+alter a script in R2 could alter the hash file sitting next to it too.
+Genuine tamper-resistance would need Authenticode code-signing with a
+private key kept outside the R2/Worker/CI trust boundary, plus a trusted
+certificate thumbprint pinned somewhere `bootstrap.ps1` can't itself be
+used to forge (e.g. baked into the WinPE image) - not implemented here,
+since the same-origin check already covers the failure mode that's
+actually been seen in practice.
 
 ## Deliver it — pick one (or both)
 
@@ -127,9 +149,12 @@ Same bucket, same upload script as everything else in this repo:
   time**, fetched fresh every time (not baked into the image). Editing it
   and pushing to `main` is enough — `.github/workflows/sync-winpe-scripts.yml`
   uploads everything under `boot/winpe/*.ps1` to R2 automatically on every
-  push that touches this directory. No manual `scripts/upload-image.sh`
-  step needed for this one file.
+  push that touches this directory, alongside a `.sha256` companion for
+  each file (see "Integrity check" above). No manual
+  `scripts/upload-image.sh` step needed for any of these.
 - `winpe/PostAction.ps1` — same auto-sync as above.
+- `winpe/bootstrap.ps1` — same auto-sync as above; this is what
+  `startnet.cmd` actually fetches and runs, not `DeployGui.ps1` directly.
 - Any app/script installers usable as task sequence steps — upload with
   `scripts/upload-image.sh` and add an entry via the admin UI's "Apps"
   section (or `POST /api/catalog/apps`), then reference it from a task

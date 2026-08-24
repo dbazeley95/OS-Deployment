@@ -162,6 +162,23 @@ function Show-ErrorBox {
     [System.Windows.Forms.MessageBox]::Show($Message, "W.I.P.E", "OK", "Error") | Out-Null
 }
 
+# Same-origin SHA256 companion (uploaded to R2 alongside the script by
+# .github/workflows/sync-winpe-scripts.yml) - guards against a corrupted
+# or truncated download (a real WinPE network-boot failure mode), not
+# deliberate tampering: anyone who could alter the script in R2 could
+# alter the hash file sitting next to it too. Throws (rather than
+# returning a bool) so the caller's own try/catch surfaces it exactly
+# like any other deploy failure, with the line-number diagnostics
+# Show-DeployForm's catch block already adds.
+function Confirm-FileHash {
+    param([string]$Url, [string]$Path)
+    $expected = (Invoke-WebRequest -Uri "$Url.sha256" -UseBasicParsing).Content.Trim()
+    $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
+    if ($actual -ine $expected) {
+        throw "Integrity check failed for $Url - expected $expected, got $actual. The download may be corrupted or incomplete."
+    }
+}
+
 # --- Step 1: technician login -------------------------------------------
 
 function Show-LoginForm {
@@ -793,6 +810,7 @@ assign letter=W
 
             New-Item -ItemType Directory -Force -Path "W:\Windows\Setup\Scripts" | Out-Null
             Invoke-WebRequest -Uri $Deployment.postActionScriptUrl -OutFile "W:\Windows\Setup\Scripts\PostAction.ps1"
+            Confirm-FileHash -Url $Deployment.postActionScriptUrl -Path "W:\Windows\Setup\Scripts\PostAction.ps1"
             # domainUsername/domainPassword were collected locally by
             # Show-SelectionForm and merged onto $Deployment client-side -
             # they were never sent to the Worker. PostAction.ps1 reads them

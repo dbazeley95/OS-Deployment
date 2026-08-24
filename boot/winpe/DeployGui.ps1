@@ -420,45 +420,46 @@ assign letter=W
             $progressBar.Value = 20
 
             Write-Log "Downloading install.wim..."
-            # Invoke-WebRequest blocks with no progress callback - use WebClient's
-            # async download instead so the progress bar/log line can update
-            # live. Its DownloadProgressChanged/DownloadFileCompleted handlers
-            # fire from a fresh pipeline context that can only see Script/Global
-            # scope - not this function's local variables OR its local
-            # functions (unlike a WinForms control event, e.g. btnDeploy's own
-            # Click handler above, which fires synchronously on the same
-            # thread/scope) - so stage what the handlers touch into $script:
-            # scope and inline the log-line update rather than calling Write-Log.
+            # Invoke-WebRequest/WebClient's async download both block or fire
+            # events off-thread with no reliable way back into this function's
+            # scope from WinPE's PowerShell - so read the stream manually in a
+            # loop on this same thread instead, calling DoEvents() each chunk
+            # to keep the window responsive. That keeps every UI update
+            # ($progressBar/$logBox) in the exact same thread/scope as the
+            # diskpart/dism calls around it, which is already proven to work.
             # The progress bar tracks overall deployment progress throughout
             # (5/20/55/85/92/100 below) - only the log line shows the
             # download's own 0-100%, so the two numbers never look mismatched.
-            $script:dlProgressBar = $progressBar
-            $script:dlLogBox = $logBox
-            $script:dlDone = $false
-            $script:dlError = $null
-
-            $client = New-Object System.Net.WebClient
-            $client.add_DownloadProgressChanged({
-                param($eventSender, $e)
-                $script:dlProgressBar.Value = 20 + [int]($e.ProgressPercentage * 0.35)
-                $text = $script:dlLogBox.Text
-                $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
-                $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
-                $script:dlLogBox.Text = "$prefix" + "Downloading install.wim... $($e.ProgressPercentage)%`r`n"
-                $script:dlLogBox.SelectionStart = $script:dlLogBox.Text.Length
-                $script:dlLogBox.ScrollToCaret()
-            })
-            $client.add_DownloadFileCompleted({
-                param($eventSender, $e)
-                if ($e.Error) { $script:dlError = $e.Error }
-                $script:dlDone = $true
-            })
-            $client.DownloadFileAsync([Uri]$Deployment.installWim, "W:\install.wim")
-            while (-not $script:dlDone) {
-                [System.Windows.Forms.Application]::DoEvents()
-                Start-Sleep -Milliseconds 50
+            $request = [System.Net.WebRequest]::Create([Uri]$Deployment.installWim)
+            $response = $request.GetResponse()
+            $totalBytes = $response.ContentLength
+            $responseStream = $response.GetResponseStream()
+            $fileStream = [System.IO.File]::Create("W:\install.wim")
+            try {
+                $buffer = New-Object byte[] 65536
+                $totalRead = 0
+                $lastPercent = -1
+                while (($read = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $fileStream.Write($buffer, 0, $read)
+                    $totalRead += $read
+                    $percent = if ($totalBytes -gt 0) { [int](($totalRead / $totalBytes) * 100) } else { 0 }
+                    if ($percent -ne $lastPercent) {
+                        $lastPercent = $percent
+                        $progressBar.Value = 20 + [int]($percent * 0.35)
+                        $text = $logBox.Text
+                        $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
+                        $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
+                        $logBox.Text = "$prefix" + "Downloading install.wim... $percent%`r`n"
+                        $logBox.SelectionStart = $logBox.Text.Length
+                        $logBox.ScrollToCaret()
+                    }
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+            } finally {
+                $fileStream.Close()
+                $responseStream.Close()
+                $response.Close()
             }
-            if ($script:dlError) { throw $script:dlError }
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."

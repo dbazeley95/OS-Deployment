@@ -13,8 +13,6 @@ export interface OsProfile {
   installWim: string;
   /** WIM image index within installWim for this edition. */
   imageIndex: number;
-  /** R2 key for the unattended-install answer file (unattend.xml). */
-  answerFile: string;
 }
 
 interface OsProfileRow {
@@ -22,7 +20,6 @@ interface OsProfileRow {
   label: string;
   install_wim_key: string;
   image_index: number;
-  answer_file_key: string;
 }
 
 function rowToProfile(row: OsProfileRow): OsProfile {
@@ -31,7 +28,6 @@ function rowToProfile(row: OsProfileRow): OsProfile {
     label: row.label,
     installWim: row.install_wim_key,
     imageIndex: row.image_index,
-    answerFile: row.answer_file_key,
   };
 }
 
@@ -40,7 +36,6 @@ export interface OsProfileInput {
   label: string;
   installWim: string;
   imageIndex: number;
-  answerFile: string;
 }
 
 export async function listProfiles(db: Bindings["DB"]): Promise<OsProfile[]> {
@@ -56,21 +51,21 @@ export async function getProfile(db: Bindings["DB"], id: string): Promise<OsProf
 export async function createProfile(db: Bindings["DB"], input: OsProfileInput): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO os_profiles (id, label, install_wim_key, image_index, answer_file_key)
-       VALUES (?1, ?2, ?3, ?4, ?5)`
+      `INSERT INTO os_profiles (id, label, install_wim_key, image_index)
+       VALUES (?1, ?2, ?3, ?4)`
     )
-    .bind(input.id, input.label, input.installWim, input.imageIndex, input.answerFile)
+    .bind(input.id, input.label, input.installWim, input.imageIndex)
     .run();
 }
 
 export async function updateProfile(db: Bindings["DB"], id: string, input: OsProfileInput): Promise<boolean> {
   const { meta } = await db
     .prepare(
-      `UPDATE os_profiles SET label = ?2, install_wim_key = ?3, image_index = ?4, answer_file_key = ?5,
+      `UPDATE os_profiles SET label = ?2, install_wim_key = ?3, image_index = ?4,
          updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, input.label, input.installWim, input.imageIndex, input.answerFile)
+    .bind(id, input.label, input.installWim, input.imageIndex)
     .run();
   return meta.changes > 0;
 }

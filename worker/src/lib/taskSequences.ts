@@ -3,11 +3,14 @@ import { AppEntry, getApp } from "./apps";
 import { BuiltinAction, getBuiltinAction } from "./builtinActions";
 
 /**
- * A task sequence bundles one OS profile with an ordered list of steps to
- * run after imaging - the cloud-editable "what to deploy" unit the WinPE
- * wizard picks from, matching MDT's task sequence concept. Backed by the
- * `task_sequences` D1 table (migrations/0006_task_sequences.sql) and
- * managed via the admin UI's catalog editor (worker/src/routes/catalog.ts).
+ * A task sequence bundles one OS profile, one answer file, and an ordered
+ * list of steps to run after imaging - the cloud-editable "what to deploy"
+ * unit the WinPE wizard picks from, matching MDT's task sequence concept.
+ * Backed by the `task_sequences` D1 table (migrations/0006_task_sequences.sql,
+ * migrations/0012_answer_file_on_task_sequence.sql) and managed via the admin
+ * UI's catalog editor (worker/src/routes/catalog.ts). The answer file lives
+ * here rather than on the OS profile so two task sequences built on the same
+ * profile can each use a different one (e.g. per-site owner/timezone).
  *
  * A step is either an `app` (installer/script from the `apps` catalog) or
  * a `builtin` (a fixed, code-defined action like "Install Windows Updates"
@@ -24,6 +27,8 @@ export interface TaskSequence {
   id: string;
   label: string;
   osProfileId: string;
+  /** R2 key for the unattended-install answer file (unattend.xml) this sequence uses. */
+  answerFile: string;
   steps: TaskSequenceStep[];
 }
 
@@ -43,6 +48,7 @@ interface TaskSequenceRow {
   id: string;
   label: string;
   os_profile_id: string;
+  answer_file_key: string;
   steps_json: string;
 }
 
@@ -63,13 +69,14 @@ function rowToTaskSequence(row: TaskSequenceRow): TaskSequence {
   } catch {
     steps = [];
   }
-  return { id: row.id, label: row.label, osProfileId: row.os_profile_id, steps };
+  return { id: row.id, label: row.label, osProfileId: row.os_profile_id, answerFile: row.answer_file_key, steps };
 }
 
 export interface TaskSequenceInput {
   id: string;
   label: string;
   osProfileId: string;
+  answerFile: string;
   steps: TaskSequenceStep[];
 }
 
@@ -101,18 +108,21 @@ export async function resolveTaskSequence(db: Bindings["DB"], id: string): Promi
 
 export async function createTaskSequence(db: Bindings["DB"], input: TaskSequenceInput): Promise<void> {
   await db
-    .prepare(`INSERT INTO task_sequences (id, label, os_profile_id, steps_json) VALUES (?1, ?2, ?3, ?4)`)
-    .bind(input.id, input.label, input.osProfileId, JSON.stringify(input.steps))
+    .prepare(
+      `INSERT INTO task_sequences (id, label, os_profile_id, answer_file_key, steps_json) VALUES (?1, ?2, ?3, ?4, ?5)`
+    )
+    .bind(input.id, input.label, input.osProfileId, input.answerFile, JSON.stringify(input.steps))
     .run();
 }
 
 export async function updateTaskSequence(db: Bindings["DB"], id: string, input: TaskSequenceInput): Promise<boolean> {
   const { meta } = await db
     .prepare(
-      `UPDATE task_sequences SET label = ?2, os_profile_id = ?3, steps_json = ?4, updated_at = datetime('now')
+      `UPDATE task_sequences SET label = ?2, os_profile_id = ?3, answer_file_key = ?4, steps_json = ?5,
+         updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, input.label, input.osProfileId, JSON.stringify(input.steps))
+    .bind(id, input.label, input.osProfileId, input.answerFile, JSON.stringify(input.steps))
     .run();
   return meta.changes > 0;
 }

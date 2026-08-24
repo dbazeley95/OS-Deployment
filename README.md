@@ -14,11 +14,12 @@ no custom unsigned binary in the boot chain, so it works cleanly under
 UEFI Secure Boot, and it's what replaces MDT's Lite Touch wizard with an
 equivalent flow: sign in, enter a hostname, decide domain-join or not (and
 if so, the domain plus admin credentials, right there in the wizard), then
-pick a **task sequence** - a cloud-editable bundle of one OS profile plus
-an ordered list of apps/customizations. The GUI script is fetched fresh
-from R2 on every boot rather than baked into the image, and the whole
-catalog (OS profiles, apps, task sequences) is managed from the admin UI
-(a "cloud Deployment Workbench") instead of a code change + redeploy.
+pick a **task sequence** - a cloud-editable bundle of one OS profile, one
+answer file, and an ordered list of apps/customizations. The GUI script is
+fetched fresh from R2 on every boot rather than baked into the image, and
+the whole catalog (operating systems, answer files, apps, task sequences)
+is managed from the admin UI (a "cloud Deployment Workbench") instead of a
+code change + redeploy.
 UEFI only, by design - no legacy BIOS/MBR boot support.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design and a sequence
@@ -72,8 +73,8 @@ VITE_API_BASE=http://localhost:8787 npm run dev
 See `boot/profiles/windows-11-25h2/README.md` for the full walkthrough
 (trimming `install.wim` to the Pro + Education indices), then push the
 essentials to R2. `install.wim` itself can instead be uploaded straight from
-the admin UI's "OS profiles" form (chunked multipart upload straight to R2 -
-no CLI needed), which also fills in its R2 key automatically:
+the admin UI's "Operating Systems" form (chunked multipart upload straight
+to R2 - no CLI needed), which also fills in its R2 key automatically:
 
 ```bash
 scripts/upload-image.sh ./install-trimmed.wim windows-11-25h2/sources/install.wim
@@ -87,12 +88,14 @@ upload — pushing to `main` syncs them to R2 automatically, see
 
 The two profiles above are seeded by migration `0004_catalog.sql`. For a
 new edition or app, upload the installer/script with
-`scripts/upload-image.sh` and add a matching entry from the admin UI's "OS
-profiles"/"Apps" sections — no code change or redeploy needed. Then bundle
-them into a task sequence from the "Task sequences" section (an OS profile
-plus an ordered list of apps) - that's what the WinPE wizard actually
-offers technicians. Migration `0006_task_sequences.sql`/
-`0007_job_task_sequence.sql` add this on top of the catalog tables.
+`scripts/upload-image.sh` and add a matching entry from the admin UI's
+"Operating Systems"/"Apps" sections — no code change or redeploy needed.
+Then bundle one into a task sequence from the "Task sequences" section
+(an OS profile plus an answer file plus an ordered list of apps) - that's
+what the WinPE wizard actually offers technicians. Migration
+`0006_task_sequences.sql`/`0007_job_task_sequence.sql`/
+`0012_answer_file_on_task_sequence.sql` add this on top of the catalog
+tables.
 
 ### 3b. Provision technicians
 

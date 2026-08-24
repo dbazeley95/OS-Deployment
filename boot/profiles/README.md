@@ -1,13 +1,18 @@
-# OS profiles
+# Operating systems
 
 This system currently deploys Windows only (see `windows-11-25h2-pro/` and
 `windows-11-25h2-edu/`, which share boot media - see
-`windows-11-25h2/README.md`). Each subdirectory holds the unattended-install
-answer file for one profile, matching a row in the `os_profiles` D1 table
-(migration `0004_catalog.sql`, managed from the admin UI's "OS profiles"
-section rather than code - see `worker/src/lib/profiles.ts`). Upload the
-answer file plus its WIM into the R2 bucket at the paths that entry's
-`installWim`/`answerFile` keys reference, using `scripts/upload-image.sh`.
+`windows-11-25h2/README.md`). Each subdirectory holds an unattended-install
+answer file that a task sequence can pick, matching a row in the
+`answer_files` D1 table (migration `0010_answer_files.sql`) referenced by a
+row in the `task_sequences` D1 table (migration
+`0012_answer_file_on_task_sequence.sql`) - both managed from the admin UI's
+"Task Sequences" and "Answer Files" sections rather than code (see
+`worker/src/lib/taskSequences.ts`/`answerFiles.ts`). The OS profile itself
+(`os_profiles` D1 table, migration `0004_catalog.sql`, "Operating Systems"
+section, `worker/src/lib/profiles.ts`) only carries the WIM and image index
+now - upload it into the R2 bucket at the path its `installWim` key
+references, using `scripts/upload-image.sh`.
 
 ## Technician auth
 
@@ -20,19 +25,20 @@ HTTP endpoint for self-service account creation - that would be a hole in
 the same boundary that gates OS reinstalls).
 
 There's no admin-side scheduling anywhere in this system - every job
-starts on the machine itself. The one prompt the WinPE wizard skips is on
-a **retry**: if this same MAC already has a booted, incomplete job (a
-previous attempt got partway through), the hostname/task-sequence prompts
-are skipped in favor of what was already decided. The wizard always asks
-to confirm domain-join fresh regardless, even on a retry - domain
-credentials are never known to the cloud (see `../winpe/README.md`), so
-there's nothing to silently reuse there. The GUI picks a **task
-sequence** (an OS profile bundled with an ordered list of apps/customizations,
-see `../winpe/README.md`) from whatever's currently in the D1-backed catalog.
+starts on the machine itself. On a **retry** (this same MAC already has a
+booted, incomplete job from a previous attempt), the wizard offers a
+"Resume previous deployment" / "Edit selection" choice instead of forcing
+either a blank form or a locked-in one - see `../winpe/README.md`. The
+wizard always asks to confirm domain-join fresh regardless, even on a
+retry - domain credentials are never known to the cloud (see
+`../winpe/README.md`), so there's nothing to silently reuse there. The GUI
+picks a **task sequence** (an OS profile plus an answer file, bundled with
+an ordered list of apps/customizations, see `../winpe/README.md`) from
+whatever's currently in the D1-backed catalog.
 
 Adding another Windows edition/version means adding a new subdirectory
-here plus a matching entry via the admin UI's "OS profiles" section (or
-`POST /api/catalog/profiles`) — the catalog is already profile-agnostic.
+here plus a matching entry via the admin UI's "Operating Systems" section
+(or `POST /api/catalog/profiles`) — the catalog is already profile-agnostic.
 
 ## Note on the phone-home pattern
 

@@ -12,11 +12,12 @@
         --border: #e2e5ea;
         --text: #1a1d23;
         --text-muted: #656b76;
-        --accent: #2563eb;
-        --accent-hover: #1d4ed8;
+        /* Xavier Catholic Education Trust brand colors. */
+        --accent: #142146;
+        --accent-hover: #24356b;
         --accent-text: #ffffff;
-        --danger: #dc2626;
-        --danger-hover: #b91c1c;
+        --danger: #c4232a;
+        --danger-hover: #9c1c21;
         --danger-text: #ffffff;
         --radius-sm: 6px;
         --radius: 10px;
@@ -53,12 +54,13 @@
           --border: #2b2f38;
           --text: #eceef1;
           --text-muted: #9aa1ad;
-          --accent: #4f8bff;
-          --accent-hover: #6b9bff;
-          --accent-text: #0a0d12;
-          --danger: #e5484d;
-          --danger-hover: #ec6a6e;
-          --danger-text: #2a0a0b;
+          /* Lighter tints of the same brand hues, for contrast on a dark surface. */
+          --accent: #5670c2;
+          --accent-hover: #7089d6;
+          --accent-text: #ffffff;
+          --danger: #e2555a;
+          --danger-hover: #ec7276;
+          --danger-text: #ffffff;
           --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
           --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
           --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.35), 0 16px 32px rgba(0, 0, 0, 0.4);
@@ -99,6 +101,13 @@
 
       header {
         margin-bottom: var(--space-6);
+      }
+
+      .brand-logo {
+        height: 44px;
+        width: auto;
+        display: block;
+        margin-bottom: var(--space-2);
       }
 
       header h1 {
@@ -873,6 +882,7 @@
     <main>
       <header>
         <div>
+          <img src="/logo.png" alt="Xavier Catholic Education Trust" class="brand-logo" />
           <h1 title="Windows Installation Provisioning Engine">W.I.P.E <span id="version-badge" class="version-badge"></span></h1>
           <p>Windows Installation Provisioning Engine - deployment catalog editor and job log, reinstalls are always started on-device.</p>
         </div>

@@ -19,11 +19,48 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+[System.Windows.Forms.Application]::EnableVisualStyles()
+[System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($false)
+
 # Set this to your Worker's URL if it ever differs from the deployed one.
 $WorkerBase = "https://api.osd.xcet.uk"
 
+# Shared look - EnableVisualStyles above only re-themes buttons/checkboxes/
+# comboboxes; font and colors still need to be set per form/control.
+$UiFont = New-Object System.Drawing.Font("Segoe UI", 9)
+$UiFontBold = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+$AccentColor = [System.Drawing.Color]::FromArgb(37, 99, 235)
+$MutedColor = [System.Drawing.Color]::FromArgb(107, 114, 128)
+
+function New-AccentButton {
+    param([string]$Text, [System.Drawing.Point]$Location, [int]$Width = 120)
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text = $Text
+    $btn.Location = $Location
+    $btn.Size = New-Object System.Drawing.Size($Width, 32)
+    $btn.FlatStyle = "Flat"
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.BackColor = $AccentColor
+    $btn.ForeColor = [System.Drawing.Color]::White
+    $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
+    return $btn
+}
+
 function Get-MacAddress {
-    (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1 -ExpandProperty MacAddress).ToLower().Replace("-", ":")
+    # Get-NetAdapter (the NetAdapter module) isn't reliably populated this
+    # early in WinPE - fall back to the classic Win32_NetworkAdapterConfiguration
+    # WMI class, which is available wherever WinPE-WMI is (every image built
+    # per this repo's README).
+    $config = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "IPEnabled = TRUE" |
+        Where-Object { $_.MACAddress } | Select-Object -First 1
+    if (-not $config) {
+        $config = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter "MACAddress IS NOT NULL" |
+            Select-Object -First 1
+    }
+    if ($config -and $config.MACAddress) {
+        return $config.MACAddress.ToLower().Replace("-", ":")
+    }
+    return $null
 }
 
 function Get-SerialNumber {
@@ -47,46 +84,64 @@ function Show-LoginForm {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "W.I.P.E - Sign in"
-    $form.Size = New-Object System.Drawing.Size(380, 220)
+    $form.Size = New-Object System.Drawing.Size(400, 330)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
+    $form.Font = $UiFont
+    $form.BackColor = [System.Drawing.Color]::White
 
-    $labelMac = New-Object System.Windows.Forms.Label
-    $labelMac.Text = "Device MAC: $Mac"
-    $labelMac.Location = New-Object System.Drawing.Point(20, 15)
-    $labelMac.AutoSize = $true
-    $form.Controls.Add($labelMac)
+    $header = New-Object System.Windows.Forms.Panel
+    $header.Size = New-Object System.Drawing.Size(400, 70)
+    $header.Location = New-Object System.Drawing.Point(0, 0)
+    $header.BackColor = $AccentColor
+    $form.Controls.Add($header)
+
+    $labelTitle = New-Object System.Windows.Forms.Label
+    $labelTitle.Text = "W.I.P.E"
+    $labelTitle.Font = $UiFontBold
+    $labelTitle.ForeColor = [System.Drawing.Color]::White
+    $labelTitle.Location = New-Object System.Drawing.Point(24, 18)
+    $labelTitle.AutoSize = $true
+    $header.Controls.Add($labelTitle)
 
     $labelUser = New-Object System.Windows.Forms.Label
     $labelUser.Text = "Username"
-    $labelUser.Location = New-Object System.Drawing.Point(20, 50)
+    $labelUser.ForeColor = $MutedColor
+    $labelUser.Location = New-Object System.Drawing.Point(24, 92)
     $labelUser.AutoSize = $true
     $form.Controls.Add($labelUser)
 
     $textUser = New-Object System.Windows.Forms.TextBox
-    $textUser.Location = New-Object System.Drawing.Point(130, 47)
-    $textUser.Width = 210
+    $textUser.Location = New-Object System.Drawing.Point(24, 112)
+    $textUser.Width = 340
     $form.Controls.Add($textUser)
 
     $labelPass = New-Object System.Windows.Forms.Label
     $labelPass.Text = "Password"
-    $labelPass.Location = New-Object System.Drawing.Point(20, 85)
+    $labelPass.ForeColor = $MutedColor
+    $labelPass.Location = New-Object System.Drawing.Point(24, 152)
     $labelPass.AutoSize = $true
     $form.Controls.Add($labelPass)
 
     $textPass = New-Object System.Windows.Forms.TextBox
-    $textPass.Location = New-Object System.Drawing.Point(130, 82)
-    $textPass.Width = 210
+    $textPass.Location = New-Object System.Drawing.Point(24, 172)
+    $textPass.Width = 340
     $textPass.UseSystemPasswordChar = $true
     $form.Controls.Add($textPass)
 
-    $btnOk = New-Object System.Windows.Forms.Button
-    $btnOk.Text = "Connect"
-    $btnOk.Location = New-Object System.Drawing.Point(130, 125)
+    $btnOk = New-AccentButton -Text "Connect" -Location (New-Object System.Drawing.Point(244, 215)) -Width 120
     $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $form.AcceptButton = $btnOk
     $form.Controls.Add($btnOk)
+
+    $labelMac = New-Object System.Windows.Forms.Label
+    $labelMac.Text = if ($Mac) { "Device MAC: $Mac" } else { "Device MAC: not detected" }
+    $labelMac.ForeColor = $MutedColor
+    $labelMac.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $labelMac.Location = New-Object System.Drawing.Point(24, 262)
+    $labelMac.AutoSize = $true
+    $form.Controls.Add($labelMac)
 
     $result = $form.ShowDialog()
     if ($result -ne [System.Windows.Forms.DialogResult]::OK -or -not $textUser.Text) {
@@ -112,6 +167,7 @@ function Show-SelectionForm {
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
+    $form.Font = $UiFont
 
     $isPreStaged = $AuthResponse.status -eq "ready"
     $y = 15
@@ -213,9 +269,7 @@ function Show-SelectionForm {
         $textDomainPass.Enabled = $checkDomain.Checked
     })
 
-    $btnOk = New-Object System.Windows.Forms.Button
-    $btnOk.Text = "Continue"
-    $btnOk.Location = New-Object System.Drawing.Point(320, $y)
+    $btnOk = New-AccentButton -Text "Continue" -Location (New-Object System.Drawing.Point(300, $y)) -Width 120
     $btnOk.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $form.AcceptButton = $btnOk
     $form.Controls.Add($btnOk)
@@ -269,6 +323,7 @@ function Show-DeployForm {
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
+    $form.Font = $UiFont
 
     $labelSummary = New-Object System.Windows.Forms.Label
     $labelSummary.Text = "$($Deployment.hostname) - $($Deployment.taskSequence)$(if ($Deployment.domainJoin) { " [join $($Deployment.domain)]" })"
@@ -290,9 +345,7 @@ function Show-DeployForm {
     $progressBar.Style = "Continuous"
     $form.Controls.Add($progressBar)
 
-    $btnDeploy = New-Object System.Windows.Forms.Button
-    $btnDeploy.Text = "Deploy"
-    $btnDeploy.Location = New-Object System.Drawing.Point(430, 305)
+    $btnDeploy = New-AccentButton -Text "Deploy" -Location (New-Object System.Drawing.Point(400, 305)) -Width 125
     $form.Controls.Add($btnDeploy)
 
     function Write-Log([string]$Line) {
@@ -379,6 +432,11 @@ assign letter=W
 
 $mac = Get-MacAddress
 $serialNumber = Get-SerialNumber
+
+if (-not $mac) {
+    Show-ErrorBox "No network adapter with a MAC address was found, so this device can't be identified to the deployment API. Check that a NIC driver loaded during boot and a cable/Wi-Fi is connected, then re-run this script."
+    exit
+}
 
 while ($true) {
     $creds = Show-LoginForm -Mac $mac

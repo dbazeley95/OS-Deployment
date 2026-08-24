@@ -386,16 +386,9 @@ function Show-DeployForm {
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Location = New-Object System.Drawing.Point(20, 275)
-    $progressBar.Size = New-Object System.Drawing.Size(440, 20)
+    $progressBar.Size = New-Object System.Drawing.Size(505, 20)
     $progressBar.Style = "Continuous"
     $form.Controls.Add($progressBar)
-
-    $labelPercent = New-Object System.Windows.Forms.Label
-    $labelPercent.Location = New-Object System.Drawing.Point(465, 275)
-    $labelPercent.Size = New-Object System.Drawing.Size(60, 20)
-    $labelPercent.TextAlign = "MiddleRight"
-    $labelPercent.ForeColor = $MutedColor
-    $form.Controls.Add($labelPercent)
 
     $btnDeploy = New-AccentButton -Text "Deploy" -Location (New-Object System.Drawing.Point(400, 305)) -Width 125
     $form.Controls.Add($btnDeploy)
@@ -428,15 +421,19 @@ assign letter=W
 
             Write-Log "Downloading install.wim..."
             # Invoke-WebRequest blocks with no progress callback - use WebClient's
-            # async download instead so the progress bar/percentage can update
+            # async download instead so the progress bar/log line can update
             # live. Its DownloadProgressChanged/DownloadFileCompleted handlers
             # fire from a fresh pipeline context that can only see Script/Global
-            # scope, not this function's local variables (unlike a WinForms
-            # control event, e.g. btnDeploy's own Click handler above, which
-            # fires synchronously on the same thread/scope) - so stage what the
-            # handlers touch into $script: scope first.
+            # scope - not this function's local variables OR its local
+            # functions (unlike a WinForms control event, e.g. btnDeploy's own
+            # Click handler above, which fires synchronously on the same
+            # thread/scope) - so stage what the handlers touch into $script:
+            # scope and inline the log-line update rather than calling Write-Log.
+            # The progress bar tracks overall deployment progress throughout
+            # (5/20/55/85/92/100 below) - only the log line shows the
+            # download's own 0-100%, so the two numbers never look mismatched.
             $script:dlProgressBar = $progressBar
-            $script:dlPercentLabel = $labelPercent
+            $script:dlLogBox = $logBox
             $script:dlDone = $false
             $script:dlError = $null
 
@@ -444,7 +441,12 @@ assign letter=W
             $client.add_DownloadProgressChanged({
                 param($eventSender, $e)
                 $script:dlProgressBar.Value = 20 + [int]($e.ProgressPercentage * 0.35)
-                $script:dlPercentLabel.Text = "$($e.ProgressPercentage)%"
+                $text = $script:dlLogBox.Text
+                $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
+                $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
+                $script:dlLogBox.Text = "$prefix" + "Downloading install.wim... $($e.ProgressPercentage)%`r`n"
+                $script:dlLogBox.SelectionStart = $script:dlLogBox.Text.Length
+                $script:dlLogBox.ScrollToCaret()
             })
             $client.add_DownloadFileCompleted({
                 param($eventSender, $e)
@@ -457,7 +459,6 @@ assign letter=W
                 Start-Sleep -Milliseconds 50
             }
             if ($script:dlError) { throw $script:dlError }
-            $labelPercent.Text = ""
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."

@@ -46,7 +46,14 @@ it's written to disk - see `boot/profiles/*/autounattend.xml`.
 ## Build the image (Windows machine with the free Windows ADK + WinPE add-on)
 
 ```powershell
-# From an elevated "Deployment and Imaging Tools Environment" prompt:
+# The "Deployment and Imaging Tools Environment" shortcut opens plain
+# cmd.exe, not PowerShell - copype/Dism run fine there since they're real
+# executables, but the $ocs/foreach/Add-Content lines below are PowerShell
+# syntax and will fail with "'$ocs' is not recognized..." etc. in cmd. Type
+# `powershell` first (elevation carries over, no new UAC prompt) before
+# running anything below this line:
+powershell
+
 copype amd64 C:\WinPE_amd64
 
 # Mount the boot image once, to both add the optional components a Forms

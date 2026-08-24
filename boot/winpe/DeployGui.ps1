@@ -648,9 +648,68 @@ assign letter=W
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."
-            $dismOutput = dism /Apply-Image /ImageFile:"W:\install.wim" /Index:$($Deployment.imageIndex) /ApplyDir:"W:\" 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path "W:\Windows\System32\ntoskrnl.exe")) {
-                throw "dism /Apply-Image failed (exit code $LASTEXITCODE) or produced an incomplete Windows install. Output:`r`n$dismOutput"
+            # Same reasoning as the install.wim download above: dism's own
+            # progress needs to be read synchronously on this thread with
+            # periodic DoEvents() calls, not via the async OutputDataReceived
+            # event - that fires on a ThreadPool thread, which is exactly the
+            # class of bug (WinForms controls touched off the UI thread) that
+            # took three prior fix attempts to eliminate from the download
+            # step. Reading char-by-char (rather than ReadLine) handles dism
+            # versions that redraw its progress bar in place via `\r` as well
+            # as ones that print periodic "NN.N%" lines when output is
+            # redirected - either way a % is extracted with the same regex.
+            $dismPsi = New-Object System.Diagnostics.ProcessStartInfo
+            $dismPsi.FileName = "dism.exe"
+            $dismPsi.Arguments = "/Apply-Image /ImageFile:`"W:\install.wim`" /Index:$($Deployment.imageIndex) /ApplyDir:`"W:\`""
+            $dismPsi.RedirectStandardOutput = $true
+            $dismPsi.RedirectStandardError = $true
+            $dismPsi.UseShellExecute = $false
+            $dismPsi.CreateNoWindow = $true
+            $dismProcess = New-Object System.Diagnostics.Process
+            $dismProcess.StartInfo = $dismPsi
+            $dismStdErr = New-Object System.Text.StringBuilder
+            $dismProcess.add_ErrorDataReceived({
+                param($sender, $e)
+                if ($e.Data) { [void]$dismStdErr.AppendLine($e.Data) }
+            })
+            [void]$dismProcess.Start()
+            $dismProcess.BeginErrorReadLine()
+
+            $dismOutput = New-Object System.Text.StringBuilder
+            $dismLineBuffer = New-Object System.Text.StringBuilder
+            $lastDismPercent = -1
+            $dismBuffer = New-Object char[] 256
+            while (-not $dismProcess.StandardOutput.EndOfStream) {
+                $read = $dismProcess.StandardOutput.Read($dismBuffer, 0, $dismBuffer.Length)
+                if ($read -le 0) { break }
+                for ($i = 0; $i -lt $read; $i++) {
+                    $ch = $dismBuffer[$i]
+                    [void]$dismOutput.Append($ch)
+                    if ($ch -eq "`r" -or $ch -eq "`n") {
+                        $line = $dismLineBuffer.ToString()
+                        [void]$dismLineBuffer.Clear()
+                        if ($line -match '(\d{1,3}(?:\.\d+)?)\s*%') {
+                            $dismPercent = [int][double]$matches[1]
+                            if ($dismPercent -ne $lastDismPercent) {
+                                $lastDismPercent = $dismPercent
+                                $progressBar.Value = 55 + [int]($dismPercent * 0.30)
+                                $text = $logBox.Text
+                                $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
+                                $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
+                                $logBox.Text = "$prefix" + "Applying image (index $($Deployment.imageIndex))... $dismPercent%`r`n"
+                                $logBox.SelectionStart = $logBox.Text.Length
+                                $logBox.ScrollToCaret()
+                            }
+                        }
+                    } else {
+                        [void]$dismLineBuffer.Append($ch)
+                    }
+                }
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+            $dismProcess.WaitForExit()
+            if ($dismProcess.ExitCode -ne 0 -or -not (Test-Path "W:\Windows\System32\ntoskrnl.exe")) {
+                throw "dism /Apply-Image failed (exit code $($dismProcess.ExitCode)) or produced an incomplete Windows install. Output:`r`n$($dismOutput.ToString())`r`n$($dismStdErr.ToString())"
             }
             Remove-Item "W:\install.wim"
             $progressBar.Value = 85

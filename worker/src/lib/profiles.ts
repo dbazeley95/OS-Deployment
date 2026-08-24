@@ -30,7 +30,12 @@ interface OsProfileRow {
   id: string;
   label: string;
   source_type: OsProfileSourceType;
-  install_wim_key: string | null;
+  // NOT NULL in D1 (a full rebuild to relax it is blocked by D1's foreign-key
+  // enforcement - see migrations/0013_fileshare_wim_source.sql) - a
+  // fileshare-sourced row stores '' here instead. Normalized to/from null at
+  // this boundary so the rest of the app only ever sees the clean
+  // `string | null` contract on OsProfile.installWim.
+  install_wim_key: string;
   file_share_path: string | null;
   image_index: number;
 }
@@ -40,7 +45,7 @@ function rowToProfile(row: OsProfileRow): OsProfile {
     id: row.id,
     label: row.label,
     sourceType: row.source_type,
-    installWim: row.install_wim_key,
+    installWim: row.install_wim_key || null,
     fileSharePath: row.file_share_path,
     imageIndex: row.image_index,
   };
@@ -71,7 +76,7 @@ export async function createProfile(db: Bindings["DB"], input: OsProfileInput): 
       `INSERT INTO os_profiles (id, label, source_type, install_wim_key, file_share_path, image_index)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
     )
-    .bind(input.id, input.label, input.sourceType, input.installWim, input.fileSharePath, input.imageIndex)
+    .bind(input.id, input.label, input.sourceType, input.installWim ?? "", input.fileSharePath, input.imageIndex)
     .run();
 }
 
@@ -82,7 +87,7 @@ export async function updateProfile(db: Bindings["DB"], id: string, input: OsPro
          image_index = ?6, updated_at = datetime('now')
        WHERE id = ?1`
     )
-    .bind(id, input.label, input.sourceType, input.installWim, input.fileSharePath, input.imageIndex)
+    .bind(id, input.label, input.sourceType, input.installWim ?? "", input.fileSharePath, input.imageIndex)
     .run();
   return meta.changes > 0;
 }

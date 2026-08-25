@@ -103,24 +103,32 @@ export function generateAnswerFile(options: AnswerFileOptions): string {
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"
                publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">${oobeBlock}
       <FirstLogonCommands>
-        <!-- Deliberately does NOT run PostAction.ps1 directly - Microsoft's
-             own docs now say FirstLogonCommands entries "are all started at
-             the same time, and no longer wait for the previous command to
-             finish" on current Windows, despite the Order element below.
-             This one entry only does fast, order-independent setup (fetch/
-             seed files, write one registry value) and seeds a RunOnce entry
-             instead - RunOnce fires once, right as the first interactive
-             desktop session starts, which is what lets PostAction.ps1 show
-             a real GUI instead of running invisibly before the desktop even
-             appears. The "!" prefix on the value name defers its deletion
-             until after the command exits, so if PostAction.ps1's own
-             domain-join reboot kills the process partway through, Windows
-             re-runs it at the next logon instead of losing the rest of the
-             work - see boot/winpe/PostAction.ps1 for the resume logic. -->
+        <!-- Deliberately does NOT run PostAction.ps1 directly, and deliberately
+             does NOT download it here either - Microsoft's own docs say
+             FirstLogonCommands entries "are all started at the same time, and
+             no longer wait for the previous command to finish" on current
+             Windows despite the Order element below, and this is also the
+             least reliable moment in the whole boot for a network call (DNS/
+             DHCP/the NIC itself may still be settling this early in first
+             logon). A failed Invoke-WebRequest here used to abort this entire
+             command, meaning the RunOnce entry below never got registered at
+             all and nothing post-imaging ever ran - silently, with no error
+             anywhere. This entry now does only local disk operations (seed
+             files, write two registry values) and defers the actual download
+             to RunOnce time instead, when the desktop is already up and
+             networking is reliably available. RunOnce fires once, right as
+             the first interactive desktop session starts, which is also what
+             lets PostAction.ps1 show a real GUI instead of running invisibly
+             before the desktop even appears. The "!" prefix on the value name
+             defers its deletion until after the command exits, so if
+             PostAction.ps1's own domain-join reboot kills the process partway
+             through, Windows re-runs it at the next logon instead of losing
+             the rest of the work - see boot/winpe/PostAction.ps1 for the
+             resume logic. -->
         <SynchronousCommand>
           <Order>1</Order>
-          <CommandLine>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\\Windows\\Setup\\Scripts | Out-Null; Invoke-WebRequest -Uri '${WORKER_BASE}/images/winpe/PostAction.ps1' -OutFile 'C:\\Windows\\Setup\\Scripts\\PostAction.ps1'; if (-not (Test-Path 'C:\\Windows\\Setup\\Scripts\\post-action.json')) { '{\\"domainJoin\\":false,\\"steps\\":[]}' | Set-Content 'C:\\Windows\\Setup\\Scripts\\post-action.json' }; New-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce' -Name '!PostAction' -Value 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Windows\\Setup\\Scripts\\PostAction.ps1' -PropertyType String -Force | Out-Null"</CommandLine>
-          <Description>Fetch the post-action script and seed defaults, then queue it to run via RunOnce once the desktop is reached</Description>
+          <CommandLine>powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path C:\\Windows\\Setup\\Scripts | Out-Null; if (-not (Test-Path 'C:\\Windows\\Setup\\Scripts\\post-action.json')) { '{\\"domainJoin\\":false,\\"steps\\":[]}' | Set-Content 'C:\\Windows\\Setup\\Scripts\\post-action.json' }; 'Invoke-WebRequest -Uri ''${WORKER_BASE}/images/winpe/PostAction.ps1'' -OutFile ''C:\\Windows\\Setup\\Scripts\\PostAction.ps1''; &amp; ''C:\\Windows\\Setup\\Scripts\\PostAction.ps1''' | Set-Content 'C:\\Windows\\Setup\\Scripts\\RunPostAction.ps1'; New-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce' -Name '!PostAction' -Value 'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Windows\\Setup\\Scripts\\RunPostAction.ps1' -PropertyType String -Force | Out-Null"</CommandLine>
+          <Description>Seed defaults, write a small bootstrap script that fetches and runs PostAction.ps1, then queue it via RunOnce once the desktop is reached</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
     </component>

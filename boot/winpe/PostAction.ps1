@@ -122,6 +122,33 @@ function Send-JobStatus {
     }
 }
 
+# Persists past the console window this script runs in (which closes the
+# instant the process exits) - the only way a technician can find out what
+# actually happened if this script fails before the GUI even appears, since
+# Write-Host output disappears along with that window.
+$logPath = "C:\Windows\Setup\Scripts\post-action.log"
+function Write-PostActionLog([string]$Message) {
+    $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $Message"
+    Write-Host $line
+    try { Add-Content -Path $logPath -Value $line } catch {}
+}
+
+# Safety net for anything NOT already caught by the per-step try/catch below
+# (a corrupt post-action.json, a WinForms control failing to construct,
+# anything unexpected) - without this, an uncaught error here just crashes
+# the script silently: the console window closes, nothing was installed, and
+# there's no way to tell why since nothing was ever logged or shown.
+trap {
+    $message = "PostAction.ps1 crashed: $($_.Exception.Message)`r`n$($_.ScriptStackTrace)"
+    Write-PostActionLog $message
+    Send-JobStatus -Status "failed" -Log $message
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.Interaction]::MsgBox($message, "OKOnly,SystemModal", "Post-imaging setup failed")
+    exit 1
+}
+
+Write-PostActionLog "PostAction.ps1 starting on $env:COMPUTERNAME"
+
 if (-not (Test-Path $configPath)) {
     Write-Host "No post-action config found - nothing further to do."
     Send-JobStatus -Status "complete" -Log "No post-action config found on this machine."
@@ -343,7 +370,7 @@ for ($i = 0; $i -lt $workItems.Count; $i++) {
     } catch {
         Set-RowStatus -Row $row -Text "Failed" -Color $WarningColor
         $anyFailed = $true
-        Write-Host "Step '$($item.Label)' failed: $($_.Exception.Message)"
+        Write-PostActionLog "Step '$($item.Label)' failed: $($_.Exception.Message)"
     }
 
     # Advance past this step regardless of outcome - a failed step is

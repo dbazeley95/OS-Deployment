@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import type { Bindings, JobStatus } from "../types";
+import type { Bindings, JobStatus, Variables } from "../types";
 import { listJobs, updateJobStatus, updateLatestJobStatusForMac } from "../lib/db";
+import { requireSession } from "../lib/auth";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 const VALID_STATUSES: JobStatus[] = ["pending", "booted", "installing", "complete", "failed"];
@@ -9,9 +10,17 @@ const VALID_STATUSES: JobStatus[] = ["pending", "booted", "installing", "complet
 // creation here on purpose. Every deployment starts on-device, via the
 // WinPE wizard (DeployGui.ps1) authenticating against /api/deploy/*; this
 // route only ever reads or corrects records that flow already created.
-export const jobsRoute = new Hono<{ Bindings: Bindings }>();
+//
+// requireSession is applied per-route here (not as a blanket /api/jobs/*
+// gate in index.ts) specifically so /by-mac/:mac can stay open - it's called
+// by post-install scripts on a freshly-imaged machine with no browser
+// session to present, so gating it the same way as the admin-facing routes
+// below made every phone-home call fail with 401, silently, since there was
+// nothing to actually show that error until the post-imaging status GUI
+// started logging it.
+export const jobsRoute = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-jobsRoute.get("/", async (c) => {
+jobsRoute.get("/", requireSession, async (c) => {
   const jobs = await listJobs(c.env.DB);
   return c.json(jobs);
 });
@@ -19,6 +28,7 @@ jobsRoute.get("/", async (c) => {
 // Phone-home endpoint for post-install scripts, which know their MAC but not
 // their numeric job id (answer files are static templates - see boot/profiles/README.md).
 // Registered before /:id so "by-mac" is never swallowed as a job id param.
+// Deliberately NOT behind requireSession - see the module comment above.
 jobsRoute.patch("/by-mac/:mac", async (c) => {
   const mac = c.req.param("mac").toLowerCase();
   if (!MAC_RE.test(mac)) {
@@ -37,7 +47,7 @@ jobsRoute.patch("/by-mac/:mac", async (c) => {
 
 // Manual correction of an existing job's status/log by its numeric id -
 // not a way to create or schedule a new deployment.
-jobsRoute.patch("/:id", async (c) => {
+jobsRoute.patch("/:id", requireSession, async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) {
     return c.json({ error: "invalid job id" }, 400);

@@ -148,11 +148,17 @@ function Get-BatteryStatus {
     if (-not $battery) { return $null }
     return @{
         Percent = $battery.EstimatedChargeRemaining
-        Charging = $battery.BatteryStatus -in 6, 7, 8, 9
+        # Win32_Battery.BatteryStatus's "charging" codes (6-9) only cover
+        # actively charging - a laptop plugged in AND already fully charged
+        # reports "Fully Charged" (3) instead, which isn't in that set, so
+        # this used to show "(on battery)" even while plugged into AC. Ask
+        # Windows directly whether AC power is connected instead, which is
+        # what the label actually needs regardless of charge level.
+        PluggedIn = [System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq [System.Windows.Forms.PowerLineStatus]::Online
     }
 }
 
-# Adds a small "Battery: NN% (charging/on battery)" label to the top-right of
+# Adds a small "Battery: NN% (plugged in/on battery)" label to the top-right of
 # a form, refreshed every 30s - only if a battery is actually present, so
 # desktops show nothing. Call after a form's other controls are added.
 function Add-BatteryLabel {
@@ -164,7 +170,7 @@ function Add-BatteryLabel {
     $label = New-Object System.Windows.Forms.Label
     $label.AutoSize = $true
     $label.ForeColor = $MutedColor
-    $label.Text = "Battery: $($initial.Percent)% $(if ($initial.Charging) { '(charging)' } else { '(on battery)' })"
+    $label.Text = "Battery: $($initial.Percent)% $(if ($initial.PluggedIn) { '(plugged in)' } else { '(on battery)' })"
     $label.Location = New-Object System.Drawing.Point(($Right - 160), $Y)
     $Form.Controls.Add($label)
 
@@ -181,7 +187,7 @@ function Add-BatteryLabel {
         try {
             $status = Get-BatteryStatus
             if ($status) {
-                $label.Text = "Battery: $($status.Percent)% $(if ($status.Charging) { '(charging)' } else { '(on battery)' })"
+                $label.Text = "Battery: $($status.Percent)% $(if ($status.PluggedIn) { '(plugged in)' } else { '(on battery)' })"
             }
         } catch {}
     })
@@ -852,7 +858,17 @@ assign letter=W
                 if (((Get-Date) - $lastLogUpdate).TotalSeconds -ge 5) {
                     $lastLogUpdate = Get-Date
                     $elapsed = [int]((Get-Date) - $dismStartTime).TotalSeconds
-                    Write-Log "Applying image (index $($Deployment.imageIndex))... still running - ${elapsed}s so far (dism often reports no progress here; this is normal, especially on slower disks)"
+                    # Updates the same line in place (like Copy-StreamWithProgress
+                    # above) rather than appending a new one every 5s - dism can
+                    # run silently for several minutes, and this used to leave a
+                    # long trail of near-identical lines behind by the time it
+                    # finished.
+                    $text = $logBox.Text
+                    $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
+                    $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
+                    $logBox.Text = "$prefix" + "Applying image... ${elapsed}s`r`n"
+                    $logBox.SelectionStart = $logBox.Text.Length
+                    $logBox.ScrollToCaret()
                 }
             }
             $progressBar.Style = "Continuous"

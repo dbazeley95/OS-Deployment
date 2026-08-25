@@ -363,17 +363,13 @@ if ($anyFailed) {
 }
 $btnClose.Enabled = $true
 
-# Auto-close only on full success, and only after giving the technician a
-# moment to actually see the "all done" state - a failure always waits for
-# a manual Close so it can't be missed. Kept on this same synchronous
-# DoEvents-pumping pattern (no Application.Run/Timer) - a background
-# thread or timer callback touching these same WinForms controls is
-# exactly the class of bug this codebase already hit and fixed elsewhere.
-$autoCloseAt = if (-not $anyFailed) { (Get-Date).AddSeconds(8) } else { $null }
+# Always waits for a manual Close, success or failure alike - a technician
+# needs to actually see and acknowledge the outcome, not have it vanish off
+# screen on its own before anyone walks over to check. Kept on this same
+# synchronous DoEvents-pumping pattern (no Application.Run/Timer) - a
+# background thread or timer callback touching these same WinForms controls
+# is exactly the class of bug this codebase already hit and fixed elsewhere.
 while ($form.Visible) {
     Start-Sleep -Milliseconds 150
     [System.Windows.Forms.Application]::DoEvents()
-    if ($autoCloseAt -and (Get-Date) -ge $autoCloseAt) {
-        $form.Close()
-    }
 }

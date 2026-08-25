@@ -1178,6 +1178,7 @@ appForm.addEventListener("submit", async (e) => {
     label: String(data.get("label")),
     r2Key: String(data.get("r2Key")),
     installKind: data.get("installKind") as AppEntry["installKind"],
+    installArgs: String(data.get("installArgs")).trim() || null,
   };
   try {
     if (editingAppId) {
@@ -1208,6 +1209,7 @@ appsBody.addEventListener("click", async (e) => {
     (appForm.elements.namedItem("label") as HTMLInputElement).value = app.label;
     (appForm.elements.namedItem("r2Key") as HTMLInputElement).value = app.r2Key;
     (appForm.elements.namedItem("installKind") as HTMLSelectElement).value = app.installKind;
+    (appForm.elements.namedItem("installArgs") as HTMLInputElement).value = app.installArgs ?? "";
     appSubmitBtn.textContent = "Save app";
     appCancelBtn.hidden = false;
   } else if (deleteId) {

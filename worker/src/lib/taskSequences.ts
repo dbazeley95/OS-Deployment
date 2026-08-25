@@ -37,6 +37,7 @@ export interface ResolvedTaskSequenceStep extends TaskSequenceStep {
   /** Only present for kind="app". */
   r2Key?: string;
   installKind?: AppEntry["installKind"];
+  installArgs?: string | null;
 }
 
 export interface ResolvedTaskSequence extends Omit<TaskSequence, "steps"> {
@@ -97,7 +98,15 @@ export async function resolveTaskSequence(db: Bindings["DB"], id: string): Promi
   for (const step of sequence.steps) {
     if (step.kind === "app") {
       const app = await getApp(db, step.id);
-      if (app) steps.push({ kind: "app", id: app.id, label: app.label, r2Key: app.r2Key, installKind: app.installKind });
+      if (app)
+        steps.push({
+          kind: "app",
+          id: app.id,
+          label: app.label,
+          r2Key: app.r2Key,
+          installKind: app.installKind,
+          installArgs: app.installArgs,
+        });
     } else {
       const action: BuiltinAction | null = getBuiltinAction(step.id);
       if (action) steps.push({ kind: "builtin", id: action.id, label: action.label });

@@ -17,6 +17,13 @@ export interface AppEntry {
   /** R2 key for the installer/script file. */
   r2Key: string;
   installKind: InstallKind;
+  /**
+   * Verbatim command-line arguments for msiexec ("msi") or the installer exe
+   * ("exe") - there's no silent-install switch that works across arbitrary
+   * EXE installers, so this overrides PostAction.ps1's default per app when
+   * set. Ignored for installKind="script" (the script decides its own args).
+   */
+  installArgs: string | null;
 }
 
 interface AppRow {
@@ -24,10 +31,17 @@ interface AppRow {
   label: string;
   r2_key: string;
   install_kind: InstallKind;
+  install_args: string | null;
 }
 
 function rowToApp(row: AppRow): AppEntry {
-  return { id: row.id, label: row.label, r2Key: row.r2_key, installKind: row.install_kind };
+  return {
+    id: row.id,
+    label: row.label,
+    r2Key: row.r2_key,
+    installKind: row.install_kind,
+    installArgs: row.install_args,
+  };
 }
 
 export interface AppInput {
@@ -35,6 +49,7 @@ export interface AppInput {
   label: string;
   r2Key: string;
   installKind: InstallKind;
+  installArgs: string | null;
 }
 
 export async function listApps(db: Bindings["DB"]): Promise<AppEntry[]> {
@@ -49,17 +64,17 @@ export async function getApp(db: Bindings["DB"], id: string): Promise<AppEntry |
 
 export async function createApp(db: Bindings["DB"], input: AppInput): Promise<void> {
   await db
-    .prepare(`INSERT INTO apps (id, label, r2_key, install_kind) VALUES (?1, ?2, ?3, ?4)`)
-    .bind(input.id, input.label, input.r2Key, input.installKind)
+    .prepare(`INSERT INTO apps (id, label, r2_key, install_kind, install_args) VALUES (?1, ?2, ?3, ?4, ?5)`)
+    .bind(input.id, input.label, input.r2Key, input.installKind, input.installArgs)
     .run();
 }
 
 export async function updateApp(db: Bindings["DB"], id: string, input: AppInput): Promise<boolean> {
   const { meta } = await db
     .prepare(
-      `UPDATE apps SET label = ?2, r2_key = ?3, install_kind = ?4, updated_at = datetime('now') WHERE id = ?1`
+      `UPDATE apps SET label = ?2, r2_key = ?3, install_kind = ?4, install_args = ?5, updated_at = datetime('now') WHERE id = ?1`
     )
-    .bind(id, input.label, input.r2Key, input.installKind)
+    .bind(id, input.label, input.r2Key, input.installKind, input.installArgs)
     .run();
   return meta.changes > 0;
 }

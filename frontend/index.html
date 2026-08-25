@@ -1264,6 +1264,10 @@
               <option value="script">script</option>
             </select>
           </div>
+          <div class="field field-wide">
+            <label for="app-install-args" title="Passed verbatim to msiexec (msi) or the installer exe (exe) - ignored for script. There's no silent-install switch that works across every EXE installer (NSIS uses /S, InstallShield /s /v&quot;/qn&quot;, Inno Setup /VERYSILENT, etc.) - leave blank to use msiexec's standard /i /quiet /norestart for msi, or the same /quiet /norestart guess for exe.">Install arguments (optional)</label>
+            <input id="app-install-args" name="installArgs" placeholder="/S" />
+          </div>
           <button type="submit" id="app-submit">Add app</button>
           <button type="button" id="app-cancel" class="btn-secondary" hidden>Cancel</button>
         </form>

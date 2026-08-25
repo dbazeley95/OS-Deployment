@@ -43,6 +43,8 @@ export interface AppEntry {
   label: string;
   r2Key: string;
   installKind: InstallKind;
+  /** Verbatim silent-install command-line args, overriding PostAction.ps1's default for this app. */
+  installArgs: string | null;
 }
 
 export type TaskSequenceStepKind = "app" | "builtin";

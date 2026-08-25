@@ -790,68 +790,66 @@ assign letter=W
             $progressBar.Value = 55
 
             Write-Log "Applying image (index $($Deployment.imageIndex))..."
-            # Same reasoning as the install.wim download above: dism's own
-            # progress needs to be read synchronously on this thread with
-            # periodic DoEvents() calls, not via the async OutputDataReceived
-            # event - that fires on a ThreadPool thread, which is exactly the
-            # class of bug (WinForms controls touched off the UI thread) that
-            # took three prior fix attempts to eliminate from the download
-            # step. Reading char-by-char (rather than ReadLine) handles dism
-            # versions that redraw its progress bar in place via `\r` as well
-            # as ones that print periodic "NN.N%" lines when output is
-            # redirected - either way a % is extracted with the same regex.
+            # dism does NOT reliably print a live progress percentage once its
+            # output is redirected (not attached to a real console) - this is
+            # a well-documented dism limitation (MDT hit the exact same
+            # thing): it typically prints one message, then nothing at all
+            # until it finishes. An earlier version of this block assumed
+            # periodic "NN.N%" lines would still show up under redirection
+            # and blocked synchronously waiting for them - since that read
+            # only returns when data actually arrives, and none reliably
+            # does, the whole UI thread (DoEvents() included) sat frozen for
+            # the entire apply, with no error, no progress, and no sign
+            # anything was still happening - exactly what this looked like
+            # from a technician's side of the screen. A version in between
+            # tried draining redirected stdout/stderr via the async
+            # *DataReceived events instead - confirmed directly (not just
+            # theorized) that this crashes the whole process the moment
+            # either one fires: .NET raises those on a ThreadPool worker
+            # thread, and a PowerShell scriptblock needs a Runspace to run
+            # in, which only exists on this script's own thread - a very
+            # plausible explanation for a failure with no error anywhere.
+            #
+            # Sidestepping the whole problem: point dism at its own
+            # /LogPath instead of redirecting its console output at all.
+            # dism's log is more detailed than its console output anyway,
+            # so this is a strict improvement, not just a workaround - and
+            # with nothing redirected, there's no pipe that can ever fill/
+            # deadlock either, so polling WaitForExit() is fully safe.
+            $dismLogPath = "X:\dism-apply.log"
             $dismPsi = New-Object System.Diagnostics.ProcessStartInfo
             $dismPsi.FileName = "dism.exe"
-            $dismPsi.Arguments = "/Apply-Image /ImageFile:`"W:\install.wim`" /Index:$($Deployment.imageIndex) /ApplyDir:`"W:\`""
-            $dismPsi.RedirectStandardOutput = $true
-            $dismPsi.RedirectStandardError = $true
+            $dismPsi.Arguments = "/Apply-Image /ImageFile:`"W:\install.wim`" /Index:$($Deployment.imageIndex) /ApplyDir:`"W:\`" /LogPath:`"$dismLogPath`""
             $dismPsi.UseShellExecute = $false
             $dismPsi.CreateNoWindow = $true
             $dismProcess = New-Object System.Diagnostics.Process
             $dismProcess.StartInfo = $dismPsi
-            $dismStdErr = New-Object System.Text.StringBuilder
-            $dismProcess.add_ErrorDataReceived({
-                param($sender, $e)
-                if ($e.Data) { [void]$dismStdErr.AppendLine($e.Data) }
-            })
             [void]$dismProcess.Start()
-            $dismProcess.BeginErrorReadLine()
 
-            $dismOutput = New-Object System.Text.StringBuilder
-            $dismLineBuffer = New-Object System.Text.StringBuilder
-            $lastDismPercent = -1
-            $dismBuffer = New-Object char[] 256
-            while (-not $dismProcess.StandardOutput.EndOfStream) {
-                $read = $dismProcess.StandardOutput.Read($dismBuffer, 0, $dismBuffer.Length)
-                if ($read -le 0) { break }
-                for ($i = 0; $i -lt $read; $i++) {
-                    $ch = $dismBuffer[$i]
-                    [void]$dismOutput.Append($ch)
-                    if ($ch -eq "`r" -or $ch -eq "`n") {
-                        $line = $dismLineBuffer.ToString()
-                        [void]$dismLineBuffer.Clear()
-                        if ($line -match '(\d{1,3}(?:\.\d+)?)\s*%') {
-                            $dismPercent = [int][double]$matches[1]
-                            if ($dismPercent -ne $lastDismPercent) {
-                                $lastDismPercent = $dismPercent
-                                $progressBar.Value = 55 + [int]($dismPercent * 0.30)
-                                $text = $logBox.Text
-                                $lastBreak = $text.LastIndexOf("`r`n", [Math]::Max(0, $text.Length - 3))
-                                $prefix = if ($lastBreak -ge 0) { $text.Substring(0, $lastBreak + 2) } else { "" }
-                                $logBox.Text = "$prefix" + "Applying image (index $($Deployment.imageIndex))... $dismPercent%`r`n"
-                                $logBox.SelectionStart = $logBox.Text.Length
-                                $logBox.ScrollToCaret()
-                            }
-                        }
-                    } else {
-                        [void]$dismLineBuffer.Append($ch)
-                    }
-                }
+            # Marquee (rather than a percentage that mostly won't move) makes
+            # clear this is actively running, not frozen - DoEvents() below
+            # keeps it (and the rest of the UI) animating/responsive for
+            # what's routinely the slowest single step of the whole deploy.
+            $progressBar.Style = "Marquee"
+            $progressBar.MarqueeAnimationSpeed = 30
+            $dismStartTime = Get-Date
+            $lastLogUpdate = $dismStartTime
+            while (-not $dismProcess.WaitForExit(200)) {
                 [System.Windows.Forms.Application]::DoEvents()
+                if (((Get-Date) - $lastLogUpdate).TotalSeconds -ge 5) {
+                    $lastLogUpdate = Get-Date
+                    $elapsed = [int]((Get-Date) - $dismStartTime).TotalSeconds
+                    Write-Log "Applying image (index $($Deployment.imageIndex))... still running - ${elapsed}s so far (dism often reports no progress here; this is normal, especially on slower disks)"
+                }
             }
-            $dismProcess.WaitForExit()
+            $progressBar.Style = "Continuous"
             if ($dismProcess.ExitCode -ne 0 -or -not (Test-Path "W:\Windows\System32\ntoskrnl.exe")) {
-                throw "dism /Apply-Image failed (exit code $($dismProcess.ExitCode)) or produced an incomplete Windows install. Output:`r`n$($dismOutput.ToString())`r`n$($dismStdErr.ToString())"
+                $dismLogTail = if (Test-Path $dismLogPath) {
+                    (Get-Content -Path $dismLogPath -Tail 40 -ErrorAction SilentlyContinue) -join "`r`n"
+                } else {
+                    "(no dism log found at $dismLogPath)"
+                }
+                throw "dism /Apply-Image failed (exit code $($dismProcess.ExitCode)) or produced an incomplete Windows install. Log tail ($dismLogPath):`r`n$dismLogTail"
             }
             Remove-Item "W:\install.wim"
             $progressBar.Value = 85

@@ -7,6 +7,11 @@ import type { Bindings } from "../types";
  * hardcoded constant in DeployGui.ps1 that needed a code push to change.
  */
 export const DRIVERS_SHARE_ROOT_KEY = "driversShareRoot";
+// "disabled" | "fileshare" | "manufacturer" - see DriversSourceType in
+// worker/src/routes/catalog.ts. Unset (null) is treated as "disabled",
+// matching the old behavior where a blank $DriversShareRoot skipped
+// injection entirely.
+export const DRIVERS_SOURCE_TYPE_KEY = "driversSourceType";
 
 export async function getSetting(db: Bindings["DB"], key: string): Promise<string | null> {
   const row = await db.prepare(`SELECT value FROM settings WHERE key = ?1`).bind(key).first<{ value: string }>();

@@ -853,8 +853,12 @@ assign letter=W
             # which the deployment genuinely can't proceed without) - it's
             # something to fix from Device Manager after first boot if it
             # doesn't work out. Wrapped in its own try/catch, deliberately
-            # NOT allowed to propagate into the outer one.
-            if ($Deployment.driversShareRoot) {
+            # NOT allowed to propagate into the outer one. "fileshare" and
+            # "manufacturer" are the two admin-UI-configurable sources (the
+            # Drivers tab / worker/src/lib/settings.ts) - "disabled" (or
+            # unset, for back-compat with older deployment payloads) skips
+            # this whole step.
+            if ($Deployment.driversSourceType -eq "fileshare" -or $Deployment.driversSourceType -eq "manufacturer") {
                 try {
                     Write-Log "Checking for a driver pack..."
                     $cs = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -868,43 +872,138 @@ assign letter=W
                     # cheap insurance against a malformed file/share path.
                     $model = ($cs.Model.Trim()) -replace '[\\/:*?"<>|]', ''
 
-                    # Only Dell driver packs (plain .cab, directly usable by
-                    # dism) are actually injected today - HP/Lenovo ship
-                    # self-extracting .exe SoftPaqs instead, needing different
-                    # extraction handling not yet built (see
-                    # boot/drivers/README.md). Looking specifically for a
-                    # .cab means an HP/Lenovo folder someone already dropped
-                    # there is safely skipped rather than mishandled.
+                    # Only Dell is wired up today, for either source - HP/
+                    # Lenovo need extra self-extracting-package handling not
+                    # yet built (see boot/drivers/README.md).
                     if ($manufacturer -ne "Dell") {
                         Write-Log "$manufacturer driver injection isn't supported yet - skipping."
-                    } elseif (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
-                        Write-Log "No domain credentials collected - skipping driver injection (enable 'Join a domain' to read the driver share)."
+                    } elseif ($Deployment.driversSourceType -eq "fileshare") {
+                        # Looking specifically for a .cab means an HP/Lenovo
+                        # folder someone already dropped there is safely
+                        # skipped rather than mishandled by expand.exe below.
+                        if (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
+                            Write-Log "No domain credentials collected - skipping driver injection (enable 'Join a domain' to read the driver share)."
+                        } else {
+                            $driverCabPath = "$($Deployment.driversShareRoot)\$($Deployment.profile)\$manufacturer\$model.cab"
+                            Write-Log "Connecting to the driver share..."
+                            $shareRoot = Connect-DomainFileShare -SharePath $Deployment.driversShareRoot `
+                                -DomainUsername $Deployment.domainUsername -DomainPassword $Deployment.domainPassword
+                            try {
+                                if (-not (Test-Path -LiteralPath $driverCabPath)) {
+                                    Write-Log "No driver pack found at $driverCabPath - skipping (normal if none has been uploaded for this model yet)."
+                                } else {
+                                    Write-Log "Found a driver pack for $manufacturer $model - expanding..."
+                                    $driverExtractPath = "$env:TEMP\drivers"
+                                    New-Item -ItemType Directory -Force -Path $driverExtractPath | Out-Null
+                                    $expandOutput = expand.exe -F:* "$driverCabPath" "$driverExtractPath" 2>&1 | Out-String
+                                    if ($LASTEXITCODE -ne 0) {
+                                        throw "Failed to expand driver pack '$driverCabPath' (exit code $LASTEXITCODE). Output:`r`n$expandOutput"
+                                    }
+                                    Write-Log "Injecting drivers into the offline image..."
+                                    $dismDriverOutput = dism /Image:W:\ /Add-Driver /Driver:"$driverExtractPath" /Recurse 2>&1 | Out-String
+                                    if ($LASTEXITCODE -ne 0) {
+                                        throw "dism /Add-Driver failed (exit code $LASTEXITCODE). Output:`r`n$dismDriverOutput"
+                                    }
+                                    Write-Log "Drivers injected."
+                                    Remove-Item -Recurse -Force $driverExtractPath -ErrorAction SilentlyContinue
+                                }
+                            } finally {
+                                Disconnect-DomainFileShare -ShareRoot $shareRoot
+                            }
+                        }
                     } else {
-                        $driverCabPath = "$($Deployment.driversShareRoot)\$($Deployment.profile)\$manufacturer\$model.cab"
-                        Write-Log "Connecting to the driver share..."
-                        $shareRoot = Connect-DomainFileShare -SharePath $Deployment.driversShareRoot `
-                            -DomainUsername $Deployment.domainUsername -DomainPassword $Deployment.domainPassword
-                        try {
-                            if (-not (Test-Path -LiteralPath $driverCabPath)) {
-                                Write-Log "No driver pack found at $driverCabPath - skipping (normal if none has been uploaded for this model yet)."
+                        # "manufacturer" - pull the driver pack straight from
+                        # Dell's own public catalog instead of a file share.
+                        # No domain credentials needed (a plain internet
+                        # download), which matters where a driver file share
+                        # isn't set up at all - useful across an estate where
+                        # that infrastructure varies site to site, or for a
+                        # one-off/home build.
+                        $targetOsCode = if ($Deployment.profile -match '\b11\b') { "Windows11" } elseif ($Deployment.profile -match '\b10\b') { "Windows10" } else { $null }
+                        if (-not $targetOsCode) {
+                            Write-Log "Couldn't tell whether task sequence profile '$($Deployment.profile)' is Windows 10 or 11 - skipping manufacturer driver lookup."
+                        } else {
+                            Write-Log "Downloading the Dell driver pack catalog..."
+                            $catalogCabPath = "$env:TEMP\DriverPackCatalog.cab"
+                            $catalogDir = "$env:TEMP\DriverPackCatalog"
+                            $catalogRequest = [System.Net.WebRequest]::Create([Uri]"https://downloads.dell.com/catalog/DriverPackCatalog.cab")
+                            $catalogResponse = $catalogRequest.GetResponse()
+                            $catalogStream = $catalogResponse.GetResponseStream()
+                            try {
+                                Copy-StreamWithProgress -SourceStream $catalogStream -TotalBytes $catalogResponse.ContentLength -DestPath $catalogCabPath `
+                                    -LogPrefix "Downloading Dell driver catalog..." -ProgressMin 85 -ProgressScale 0.01
+                            } finally {
+                                $catalogStream.Close()
+                                $catalogResponse.Close()
+                            }
+                            New-Item -ItemType Directory -Force -Path $catalogDir | Out-Null
+                            $expandCatalogOutput = expand.exe -F:* "$catalogCabPath" "$catalogDir" 2>&1 | Out-String
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "Failed to expand the Dell driver pack catalog (exit code $LASTEXITCODE). Output:`r`n$expandCatalogOutput"
+                            }
+
+                            [xml]$catalog = Get-Content -LiteralPath "$catalogDir\DriverPackCatalog.xml" -Raw
+                            # Dell's own guidance (support.dell.com KB000122176):
+                            # match the Model node's "name" attribute (the same
+                            # string as Win32_ComputerSystem.Model) rather than
+                            # "systemID", since systemID isn't reliably readable
+                            # via WMI. osArch is hardcoded to x64 since this repo
+                            # only deploys UEFI/x64 Windows. Sorted newest-first
+                            # since a model can have several driver packs for the
+                            # same OS released over time.
+                            $match = $catalog.DriverPackManifest.DriverPackage | Where-Object {
+                                $_.SupportedSystems.Brand.Model.name -eq $model -and
+                                $_.SupportedOperatingSystems.OperatingSystem.osCode -eq $targetOsCode -and
+                                $_.SupportedOperatingSystems.OperatingSystem.osArch -eq "x64"
+                            } | Sort-Object { [datetime]$_.dateTime } -Descending | Select-Object -First 1
+
+                            if (-not $match) {
+                                Write-Log "No Dell driver pack found in the catalog for '$model' / $targetOsCode - skipping."
                             } else {
-                                Write-Log "Found a driver pack for $manufacturer $model - expanding..."
+                                $packageUrl = "https://$($catalog.DriverPackManifest.baseLocation)/$($match.path)"
                                 $driverExtractPath = "$env:TEMP\drivers"
                                 New-Item -ItemType Directory -Force -Path $driverExtractPath | Out-Null
-                                $expandOutput = expand.exe -F:* "$driverCabPath" "$driverExtractPath" 2>&1 | Out-String
-                                if ($LASTEXITCODE -ne 0) {
-                                    throw "Failed to expand driver pack '$driverCabPath' (exit code $LASTEXITCODE). Output:`r`n$expandOutput"
+
+                                Write-Log "Downloading driver pack for $model ($targetOsCode)..."
+                                $packageRequest = [System.Net.WebRequest]::Create([Uri]$packageUrl)
+                                $packageResponse = $packageRequest.GetResponse()
+                                $packageStream = $packageResponse.GetResponseStream()
+                                # Dell serves both formats depending on how
+                                # recent the model/pack is - older packs are a
+                                # plain .cab, current-gen ones a self-extracting
+                                # .exe (SoftPaq-style) - handle both.
+                                $packageFile = "$env:TEMP\driverpack.$($match.format)"
+                                try {
+                                    Copy-StreamWithProgress -SourceStream $packageStream -TotalBytes $packageResponse.ContentLength -DestPath $packageFile `
+                                        -LogPrefix "Downloading driver pack..." -ProgressMin 86 -ProgressScale 0.02
+                                } finally {
+                                    $packageStream.Close()
+                                    $packageResponse.Close()
                                 }
+
+                                if ($match.format -eq "cab") {
+                                    $expandOutput = expand.exe -F:* "$packageFile" "$driverExtractPath" 2>&1 | Out-String
+                                    if ($LASTEXITCODE -ne 0) {
+                                        throw "Failed to expand driver pack (exit code $LASTEXITCODE). Output:`r`n$expandOutput"
+                                    }
+                                } else {
+                                    # Dell's documented silent-extract switches
+                                    # for the self-extracting driver pack exe.
+                                    $extractProcess = Start-Process -FilePath $packageFile -ArgumentList "/s", "/e=$driverExtractPath" -Wait -PassThru
+                                    if ($extractProcess.ExitCode -ne 0) {
+                                        throw "Driver pack self-extraction failed (exit code $($extractProcess.ExitCode))."
+                                    }
+                                }
+
                                 Write-Log "Injecting drivers into the offline image..."
                                 $dismDriverOutput = dism /Image:W:\ /Add-Driver /Driver:"$driverExtractPath" /Recurse 2>&1 | Out-String
                                 if ($LASTEXITCODE -ne 0) {
                                     throw "dism /Add-Driver failed (exit code $LASTEXITCODE). Output:`r`n$dismDriverOutput"
                                 }
                                 Write-Log "Drivers injected."
-                                Remove-Item -Recurse -Force $driverExtractPath -ErrorAction SilentlyContinue
+                                Remove-Item -Recurse -Force $driverExtractPath, $packageFile -ErrorAction SilentlyContinue
                             }
-                        } finally {
-                            Disconnect-DomainFileShare -ShareRoot $shareRoot
+                            Remove-Item -Recurse -Force $catalogDir, $catalogCabPath -ErrorAction SilentlyContinue
                         }
                     }
                 } catch {

@@ -4,7 +4,7 @@ import { getDevice, getPendingJobForMac, resolveOrCreateJob } from "../lib/db";
 import { getProfile } from "../lib/profiles";
 import { getTaskSequence, listTaskSequences, resolveTaskSequence } from "../lib/taskSequences";
 import { verifyTechnicianCredentials } from "../lib/auth";
-import { DRIVERS_SHARE_ROOT_KEY, getSetting } from "../lib/settings";
+import { DRIVERS_SHARE_ROOT_KEY, DRIVERS_SOURCE_TYPE_KEY, getSetting } from "../lib/settings";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 
@@ -44,9 +44,12 @@ async function deploymentPayload(
     domainJoin,
     domain: domainJoin ? (domain ?? null) : undefined,
     hostname: device?.hostname ?? null,
-    // Read from the admin-UI "Settings" tab (worker/src/lib/settings.ts) -
-    // blank/null disables driver injection entirely, matching the previous
-    // hardcoded $DriversShareRoot default in DeployGui.ps1.
+    // Read from the admin-UI "Drivers" tab (worker/src/lib/settings.ts) -
+    // "disabled" (the default when unset) skips driver injection entirely;
+    // "fileshare" reads driversShareRoot over the network with the domain-
+    // join credentials below; "manufacturer" pulls straight from Dell's own
+    // public catalog and ignores driversShareRoot.
+    driversSourceType: (await getSetting(db, DRIVERS_SOURCE_TYPE_KEY)) ?? "disabled",
     driversShareRoot: await getSetting(db, DRIVERS_SHARE_ROOT_KEY),
     // "r2": installWim is a Worker-hosted URL, same as always. "fileshare":
     // installWim is null and fileSharePath carries the raw UNC path instead -

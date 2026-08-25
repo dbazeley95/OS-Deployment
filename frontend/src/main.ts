@@ -6,6 +6,7 @@ import {
   type AppEntry,
   type BuiltinAction,
   type DeploymentJob,
+  type DriversSourceType,
   type OsProfile,
   type Role,
   type TaskSequence,
@@ -149,6 +150,8 @@ const tsSubmitBtn = document.querySelector<HTMLButtonElement>("#ts-submit")!;
 const tsCancelBtn = document.querySelector<HTMLButtonElement>("#ts-cancel")!;
 
 const driversForm = document.querySelector<HTMLFormElement>("#drivers-form")!;
+const driversSourceTypeSelect = document.querySelector<HTMLSelectElement>("#drivers-source-type")!;
+const driversShareRootField = document.querySelector<HTMLElement>("#drivers-share-root-field")!;
 const driversShareRootInput = document.querySelector<HTMLInputElement>("#drivers-share-root")!;
 
 const usersBody = document.querySelector<HTMLElement>("#users-body")!;
@@ -388,9 +391,15 @@ async function loadUsersTable() {
     : emptyRow(4, "No users yet.");
 }
 
+function updateDriversSourceFields() {
+  driversShareRootField.hidden = driversSourceTypeSelect.value !== "fileshare";
+}
+
 async function loadDriversSettings() {
   const settings = await api.getSettings();
+  driversSourceTypeSelect.value = settings.driversSourceType;
   driversShareRootInput.value = settings.driversShareRoot ?? "";
+  updateDriversSourceFields();
 }
 
 async function loadTsStepOptions() {
@@ -1220,11 +1229,16 @@ taskSequencesBody.addEventListener("click", async (e) => {
   }
 });
 
+driversSourceTypeSelect.addEventListener("change", updateDriversSourceFields);
+
 driversForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorEl.textContent = "";
   try {
-    await api.updateSettings({ driversShareRoot: driversShareRootInput.value.trim() });
+    await api.updateSettings({
+      driversSourceType: driversSourceTypeSelect.value as DriversSourceType,
+      driversShareRoot: driversShareRootInput.value.trim(),
+    });
     await loadDriversSettings();
   } catch (err) {
     showError(err);

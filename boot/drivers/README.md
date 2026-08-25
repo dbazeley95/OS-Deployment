@@ -23,10 +23,13 @@ involved format to handle automatically (see their sections below) -
 <DriversShareRoot>\<Operating System id>\<Manufacturer>\<Model>.cab
 ```
 
-- **`DriversShareRoot`** - set once, at the top of `DeployGui.ps1`
-  (`$DriversShareRoot`), e.g. `\\fileserver\share\Drivers`. Leave it
-  blank (the default) to skip driver injection entirely - useful before
-  a share exists yet, or if you don't need this at all.
+- **`DriversShareRoot`** - set from the admin UI's **Drivers** tab
+  (stored as a D1 setting, not a script constant - see
+  `worker/src/lib/settings.ts`), e.g. `\\fileserver\share\Drivers`.
+  Leave it blank (the default) to skip driver injection entirely -
+  useful before a share exists yet, or if you don't need this at all.
+  `DeployGui.ps1` picks up the current value on every deploy, with no
+  code change or WinPE image rebuild needed to update it.
 - **`Operating System id`** - the exact `id` of the "Operating System"
   entry in the admin UI's catalog (e.g. `windows-11-25h2-pro`) - the
   same value already used for R2 keys, task sequences, etc.

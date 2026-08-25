@@ -25,16 +25,6 @@ Add-Type -AssemblyName System.Drawing
 # Set this to your Worker's URL if it ever differs from the deployed one.
 $WorkerBase = "https://api.osd.xcet.uk"
 
-# UNC path to the root of an MDT-style "Total Control" driver-pack file
-# share - not R2, deliberately, since driver packs are large and this
-# avoids that storage/egress cost entirely. Leave blank to skip driver
-# injection altogether (e.g. no share set up yet). Read using the same
-# domain-join credentials as a fileshare-sourced install.wim - requires
-# "Join a domain" to be enabled in the wizard. See boot/drivers/README.md
-# for the folder convention this expects and how to source driver packs
-# per manufacturer (only Dell is actually injected today - see there).
-$DriversShareRoot = ""
-
 # Shared look - EnableVisualStyles above only re-themes buttons/checkboxes/
 # comboboxes; font and colors still need to be set per form/control.
 $UiFont = New-Object System.Drawing.Font("Segoe UI", 9)
@@ -864,7 +854,7 @@ assign letter=W
             # something to fix from Device Manager after first boot if it
             # doesn't work out. Wrapped in its own try/catch, deliberately
             # NOT allowed to propagate into the outer one.
-            if ($DriversShareRoot) {
+            if ($Deployment.driversShareRoot) {
                 try {
                     Write-Log "Checking for a driver pack..."
                     $cs = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -890,9 +880,9 @@ assign letter=W
                     } elseif (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
                         Write-Log "No domain credentials collected - skipping driver injection (enable 'Join a domain' to read the driver share)."
                     } else {
-                        $driverCabPath = "$DriversShareRoot\$($Deployment.profile)\$manufacturer\$model.cab"
+                        $driverCabPath = "$($Deployment.driversShareRoot)\$($Deployment.profile)\$manufacturer\$model.cab"
                         Write-Log "Connecting to the driver share..."
-                        $shareRoot = Connect-DomainFileShare -SharePath $DriversShareRoot `
+                        $shareRoot = Connect-DomainFileShare -SharePath $Deployment.driversShareRoot `
                             -DomainUsername $Deployment.domainUsername -DomainPassword $Deployment.domainPassword
                         try {
                             if (-not (Test-Path -LiteralPath $driverCabPath)) {

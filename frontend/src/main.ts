@@ -148,6 +148,9 @@ const tsNextBtn = document.querySelector<HTMLButtonElement>("#ts-next-btn")!;
 const tsSubmitBtn = document.querySelector<HTMLButtonElement>("#ts-submit")!;
 const tsCancelBtn = document.querySelector<HTMLButtonElement>("#ts-cancel")!;
 
+const driversForm = document.querySelector<HTMLFormElement>("#drivers-form")!;
+const driversShareRootInput = document.querySelector<HTMLInputElement>("#drivers-share-root")!;
+
 const usersBody = document.querySelector<HTMLElement>("#users-body")!;
 const userForm = document.querySelector<HTMLFormElement>("#user-form")!;
 const userUsernameInput = document.querySelector<HTMLInputElement>("#user-username")!;
@@ -385,6 +388,11 @@ async function loadUsersTable() {
     : emptyRow(4, "No users yet.");
 }
 
+async function loadDriversSettings() {
+  const settings = await api.getSettings();
+  driversShareRootInput.value = settings.driversShareRoot ?? "";
+}
+
 async function loadTsStepOptions() {
   const [apps, builtins] = await Promise.all([api.listCatalogApps(), api.listCatalogBuiltinActions()]);
   stepLabels = {
@@ -459,6 +467,7 @@ async function refresh() {
       loadAnswerFileSelectOptions(),
       loadAnswerFilesTable(),
       loadUsersTable(),
+      loadDriversSettings(),
     ]);
   } catch (err) {
     showError(err);
@@ -1208,6 +1217,17 @@ taskSequencesBody.addEventListener("click", async (e) => {
     } catch (err) {
       showError(err);
     }
+  }
+});
+
+driversForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  errorEl.textContent = "";
+  try {
+    await api.updateSettings({ driversShareRoot: driversShareRootInput.value.trim() });
+    await loadDriversSettings();
+  } catch (err) {
+    showError(err);
   }
 });
 

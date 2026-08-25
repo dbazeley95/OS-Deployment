@@ -31,6 +31,7 @@ import {
 } from "../lib/answerFiles";
 import { Role, ROLE_RANK } from "../lib/auth";
 import { countAdmins, createUser, deleteUser, getUser, listUsers, resetUserPassword, setUserRole } from "../lib/users";
+import { DRIVERS_SHARE_ROOT_KEY, getSetting, setSetting } from "../lib/settings";
 
 const INSTALL_KINDS: InstallKind[] = ["msi", "exe", "script"];
 
@@ -400,5 +401,26 @@ catalogRoute.delete("/users/:username", requireRole("admin"), async (c) => {
     return c.json({ error: "cannot delete the last remaining admin" }, 400);
   }
   await deleteUser(c.env.DB, username);
+  return c.json({ ok: true });
+});
+
+/**
+ * Global admin-UI settings (see worker/src/lib/settings.ts) - starting with
+ * the drivers file-share root DeployGui.ps1 reads for driver injection (see
+ * boot/drivers/README.md). Open to any logged-in role to read, since
+ * DeployGui.ps1's own /api/deploy/select response depends on it - a
+ * technician-plus write gate keeps editing to those roles, matching the
+ * rest of the catalog.
+ */
+catalogRoute.get("/settings", async (c) => {
+  return c.json({ driversShareRoot: await getSetting(c.env.DB, DRIVERS_SHARE_ROOT_KEY) });
+});
+
+catalogRoute.put("/settings", requireRole("technician"), async (c) => {
+  const body = await c.req.json<{ driversShareRoot?: string }>().catch(() => null);
+  if (body?.driversShareRoot === undefined) {
+    return c.json({ error: "driversShareRoot is required" }, 400);
+  }
+  await setSetting(c.env.DB, DRIVERS_SHARE_ROOT_KEY, body.driversShareRoot.trim());
   return c.json({ ok: true });
 });

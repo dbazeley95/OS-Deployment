@@ -4,6 +4,7 @@ import { getDevice, getPendingJobForMac, resolveOrCreateJob } from "../lib/db";
 import { getProfile } from "../lib/profiles";
 import { getTaskSequence, listTaskSequences, resolveTaskSequence } from "../lib/taskSequences";
 import { verifyTechnicianCredentials } from "../lib/auth";
+import { DRIVERS_SHARE_ROOT_KEY, getSetting } from "../lib/settings";
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i;
 
@@ -43,6 +44,10 @@ async function deploymentPayload(
     domainJoin,
     domain: domainJoin ? (domain ?? null) : undefined,
     hostname: device?.hostname ?? null,
+    // Read from the admin-UI "Settings" tab (worker/src/lib/settings.ts) -
+    // blank/null disables driver injection entirely, matching the previous
+    // hardcoded $DriversShareRoot default in DeployGui.ps1.
+    driversShareRoot: await getSetting(db, DRIVERS_SHARE_ROOT_KEY),
     // "r2": installWim is a Worker-hosted URL, same as always. "fileshare":
     // installWim is null and fileSharePath carries the raw UNC path instead -
     // DeployGui.ps1 reads it directly off the network (authenticated with

@@ -238,4 +238,12 @@ export const api = {
     request<{ ok: true }>(`/api/catalog/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
   changeMyPassword: (password: string) =>
     request<{ ok: true }>("/api/catalog/users/me/password", { method: "PUT", body: JSON.stringify({ password }) }),
+
+  // Global admin-UI settings (Settings tab) - currently just the drivers
+  // file-share root DeployGui.ps1 reads for driver injection, see
+  // boot/drivers/README.md. Read is open to every role; write is gated
+  // technician-plus server-side.
+  getSettings: () => request<{ driversShareRoot: string | null }>("/api/catalog/settings"),
+  updateSettings: (input: { driversShareRoot: string }) =>
+    request<{ ok: true }>("/api/catalog/settings", { method: "PUT", body: JSON.stringify(input) }),
 };

@@ -1324,7 +1324,21 @@
       <div class="tab-panel" data-tab-panel="drivers" hidden>
       <section class="card">
         <h2>Drivers</h2>
-        <p class="hint">Coming soon - inject out-of-box drivers into the deployment for hardware Windows doesn't cover itself.</p>
+        <p class="hint">
+          DeployGui.ps1 injects out-of-box drivers offline, straight after applying the
+          image, from a plain Windows file share (not R2 - driver packs are large). Set
+          the share's root path below; leave it blank to disable driver injection
+          entirely. Only Dell driver packs are supported today - see
+          <code>boot/drivers/README.md</code> for the folder convention and how to
+          source packs per manufacturer.
+        </p>
+        <form id="drivers-form" class="technician-plus panel-form">
+          <div class="field">
+            <label for="drivers-share-root">Drivers file share root (UNC path)</label>
+            <input id="drivers-share-root" name="driversShareRoot" placeholder="\\fileserver\share\Drivers" />
+          </div>
+          <button type="submit" id="drivers-submit">Save</button>
+        </form>
       </section>
       </div>
 

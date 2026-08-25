@@ -186,7 +186,16 @@ function Add-BatteryLabel {
         } catch {}
     })
     $timer.Start()
-    $Form.Add_FormClosed({ $timer.Stop() }) | Out-Null
+    # Rooted on the form itself (via .Tag) rather than left as only a local
+    # variable this function's scope closes over - seen crashing on real
+    # hardware with "You cannot call a method on a null-valued expression"
+    # at $timer.Stop() below, consistent with the .NET Timer being garbage
+    # collected once nothing outside the two event-handler closures still
+    # references it. $Form is guaranteed to outlive the timer (it's held by
+    # the caller for the whole screen), so tagging it there prevents that.
+    # The null-check is defense in depth in case FormClosed ever fires twice.
+    $Form.Tag = $timer
+    $Form.Add_FormClosed({ if ($Form.Tag) { $Form.Tag.Stop() } }) | Out-Null
 }
 
 function Invoke-DeployApi {

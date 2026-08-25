@@ -100,8 +100,9 @@ sequenceDiagram
     Worker-->>Target: installWim/imageIndex/answerFileUrl/postActionScriptUrl + resolved step URLs
     Target->>R2: download install.wim, answer file, PostAction.ps1 (via Worker, unauthenticated)
     Target->>Target: GUI shows progress: partition/format disk, DISM /Apply-Image, substitute hostname into answer file, write post-action.json (incl. local-only domain credentials + steps), bcdboot, reboot
-    Target->>Target: first logon runs PostAction.ps1 - joins the domain non-interactively, scrubs the credential from disk, then runs each task-sequence step in order
-    Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=complete} (phone-home)
+    Target->>Target: FirstLogonCommands seeds a RunOnce entry for PostAction.ps1 (not run directly - FirstLogonCommands no longer reliably runs entries in Order on current Windows)
+    Target->>Target: RunOnce fires PostAction.ps1 once the desktop is reached - shows a status GUI, joins the domain non-interactively, scrubs the credential from disk, then runs each task-sequence step in order
+    Target->>Worker: PATCH /api/jobs/by-mac/:mac {status=installing}, then {status=complete|failed} once finished (phone-home)
     Worker->>D1: update job status
 ```
 

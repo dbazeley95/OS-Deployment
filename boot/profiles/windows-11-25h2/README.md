@@ -3,9 +3,12 @@
 Windows install media is not redistributable, so this repo only ships
 `autounattend.xml` templates. Pro and Education share one WIM — only the
 per-edition `autounattend.xml` differs, by WIM image index. Both editions'
-first-logon step runs the generalized `../winpe/PostAction.ps1`
-(non-interactive domain join, then the task sequence's app/customization
-steps in order), not a per-edition script — see `../winpe/README.md`.
+first logon queues the generalized `../winpe/PostAction.ps1` (via a
+RunOnce registry entry, not a direct `FirstLogonCommands` invocation - see
+"Post-imaging action" below) to run once the desktop is reached: it shows
+a small status GUI while it does the non-interactive domain join, then the
+task sequence's app/customization steps in order. Not a per-edition
+script — see `../winpe/README.md`.
 
 The deployment path is the WinPE flow in `../winpe/`, which downloads
 `install.wim` directly over HTTPS from within a full PowerShell
@@ -46,6 +49,15 @@ To use these profiles:
 
 ## Post-imaging action
 
-Both editions' `FirstLogonCommands` fetch and run the generalized
-`../winpe/PostAction.ps1` — see that directory's `README.md` and
-`PostAction.ps1` itself for the domain-join and task-sequence-step logic.
+Both editions' `FirstLogonCommands` only fetch `../winpe/PostAction.ps1`
+and queue it via a `HKLM\...\RunOnce` registry entry - they don't run it
+directly. This is deliberate, not just a style choice: current Windows no
+longer guarantees `FirstLogonCommands` entries run in the order their
+`<Order>` element implies (commands now all start "at the same time" per
+Microsoft's own docs), so anything that has to happen strictly after
+imaging - and that should show a GUI, which needs the desktop to actually
+be there first - can't safely live in `FirstLogonCommands` itself. RunOnce
+fires once, right as the first interactive desktop session starts. See
+that directory's `README.md` and `PostAction.ps1` itself for the domain-
+join/task-sequence-step logic, the status GUI, and how it resumes cleanly
+across the domain-join reboot.

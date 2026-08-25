@@ -31,6 +31,10 @@ import {
 } from "../lib/answerFiles";
 import { Role, ROLE_RANK } from "../lib/auth";
 import { countAdmins, createUser, deleteUser, getUser, listUsers, resetUserPassword, setUserRole } from "../lib/users";
+import { DRIVERS_SHARE_ROOT_KEY, DRIVERS_SOURCE_TYPE_KEY, getSetting, setSetting } from "../lib/settings";
+
+type DriversSourceType = "disabled" | "fileshare" | "manufacturer";
+const DRIVERS_SOURCE_TYPES: DriversSourceType[] = ["disabled", "fileshare", "manufacturer"];
 
 const INSTALL_KINDS: InstallKind[] = ["msi", "exe", "script"];
 
@@ -400,5 +404,36 @@ catalogRoute.delete("/users/:username", requireRole("admin"), async (c) => {
     return c.json({ error: "cannot delete the last remaining admin" }, 400);
   }
   await deleteUser(c.env.DB, username);
+  return c.json({ ok: true });
+});
+
+/**
+ * Global admin-UI settings (see worker/src/lib/settings.ts) - starting with
+ * where DeployGui.ps1 pulls driver packs from for driver injection (see
+ * boot/drivers/README.md): a file share, straight from the manufacturer's
+ * own public catalog (Dell only, today), or disabled entirely. Open to any
+ * logged-in role to read, since DeployGui.ps1's own /api/deploy/select
+ * response depends on it - a technician-plus write gate keeps editing to
+ * those roles, matching the rest of the catalog.
+ */
+catalogRoute.get("/settings", async (c) => {
+  const driversSourceType = ((await getSetting(c.env.DB, DRIVERS_SOURCE_TYPE_KEY)) ?? "disabled") as DriversSourceType;
+  return c.json({
+    driversSourceType,
+    driversShareRoot: await getSetting(c.env.DB, DRIVERS_SHARE_ROOT_KEY),
+  });
+});
+
+catalogRoute.put("/settings", requireRole("technician"), async (c) => {
+  const body = await c.req.json<{ driversSourceType?: unknown; driversShareRoot?: string }>().catch(() => null);
+  if (typeof body?.driversSourceType !== "string" || !DRIVERS_SOURCE_TYPES.includes(body.driversSourceType as DriversSourceType)) {
+    return c.json({ error: `driversSourceType must be one of: ${DRIVERS_SOURCE_TYPES.join(", ")}` }, 400);
+  }
+  const driversShareRoot = (body.driversShareRoot ?? "").trim();
+  if (body.driversSourceType === "fileshare" && !driversShareRoot) {
+    return c.json({ error: "driversShareRoot is required when driversSourceType is 'fileshare'" }, 400);
+  }
+  await setSetting(c.env.DB, DRIVERS_SOURCE_TYPE_KEY, body.driversSourceType);
+  await setSetting(c.env.DB, DRIVERS_SHARE_ROOT_KEY, driversShareRoot);
   return c.json({ ok: true });
 });

@@ -183,6 +183,15 @@
         gap: 0.3rem;
       }
 
+      /* `.field`'s own `display: flex` above otherwise beats the browser's
+         default `[hidden] { display: none }` UA rule (author styles always
+         win over UA styles on a specificity tie) - without this, toggling
+         the `hidden` attribute on a `.field` (e.g. the file-share-only
+         inputs on the Operating Systems/Drivers tabs) does nothing visible. */
+      .field[hidden] {
+        display: none;
+      }
+
       .field label {
         font-size: 0.8rem;
         color: var(--text-muted);
@@ -1324,7 +1333,31 @@
       <div class="tab-panel" data-tab-panel="drivers" hidden>
       <section class="card">
         <h2>Drivers</h2>
-        <p class="hint">Coming soon - inject out-of-box drivers into the deployment for hardware Windows doesn't cover itself.</p>
+        <p class="hint">
+          DeployGui.ps1 injects out-of-box drivers offline, straight after applying the
+          image. Pull packs from a plain Windows file share (fast, but needs one set up
+          at every site), or straight from the manufacturer's own public catalog over
+          the internet (no file share needed anywhere - useful across an estate where
+          that infrastructure varies site to site, or for a one-off/home build). Only
+          Dell driver packs are supported today, for either source - see
+          <code>boot/drivers/README.md</code> for the folder convention (file share) and
+          how manufacturer matching works.
+        </p>
+        <form id="drivers-form" class="technician-plus panel-form">
+          <div class="field">
+            <label for="drivers-source-type">Driver source</label>
+            <select id="drivers-source-type" name="driversSourceType">
+              <option value="disabled">Disabled</option>
+              <option value="fileshare">File share</option>
+              <option value="manufacturer">Direct from manufacturer (Dell)</option>
+            </select>
+          </div>
+          <div class="field" id="drivers-share-root-field">
+            <label for="drivers-share-root">Drivers file share root (UNC path)</label>
+            <input id="drivers-share-root" name="driversShareRoot" placeholder="\\fileserver\share\Drivers" />
+          </div>
+          <button type="submit" id="drivers-submit">Save</button>
+        </form>
       </section>
       </div>
 

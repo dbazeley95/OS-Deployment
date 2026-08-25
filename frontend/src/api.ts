@@ -96,6 +96,8 @@ export interface AnswerFileInput {
  */
 export type Role = "admin" | "technician" | "beginner";
 
+export type DriversSourceType = "disabled" | "fileshare" | "manufacturer";
+
 export interface AppUser {
   username: string;
   role: Role;
@@ -238,4 +240,12 @@ export const api = {
     request<{ ok: true }>(`/api/catalog/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
   changeMyPassword: (password: string) =>
     request<{ ok: true }>("/api/catalog/users/me/password", { method: "PUT", body: JSON.stringify({ password }) }),
+
+  // Global admin-UI settings (Drivers tab) - where DeployGui.ps1 pulls
+  // driver packs from for driver injection, see boot/drivers/README.md.
+  // Read is open to every role; write is gated technician-plus server-side.
+  getSettings: () =>
+    request<{ driversSourceType: DriversSourceType; driversShareRoot: string | null }>("/api/catalog/settings"),
+  updateSettings: (input: { driversSourceType: DriversSourceType; driversShareRoot: string }) =>
+    request<{ ok: true }>("/api/catalog/settings", { method: "PUT", body: JSON.stringify(input) }),
 };

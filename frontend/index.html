@@ -1242,8 +1242,19 @@
             <input id="app-label" name="label" placeholder="Company VPN Client" required />
           </div>
           <div class="field">
-            <label for="app-r2key">R2 key</label>
+            <label for="app-r2key" title="Where the installer/script lives in storage - fills in automatically when you upload one below">R2 key</label>
             <input id="app-r2key" name="r2Key" placeholder="apps/company-vpn.msi" required />
+          </div>
+          <div class="field field-wide">
+            <label for="app-file">Or upload a file directly</label>
+            <div class="upload-row">
+              <input id="app-file" type="file" />
+              <button type="button" id="app-upload-btn" disabled>Upload</button>
+            </div>
+            <div class="upload-progress" id="app-upload-progress" hidden>
+              <progress id="app-upload-progress-bar" max="100" value="0"></progress>
+              <span id="app-upload-progress-text"></span>
+            </div>
           </div>
           <div class="field">
             <label for="app-install-kind">Install kind</label>

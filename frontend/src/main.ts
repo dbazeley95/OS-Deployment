@@ -126,8 +126,14 @@ const afCancelBtn = document.querySelector<HTMLButtonElement>("#af-cancel")!;
 const appsBody = document.querySelector<HTMLElement>("#apps-body")!;
 const appForm = document.querySelector<HTMLFormElement>("#app-form")!;
 const appIdInput = document.querySelector<HTMLInputElement>("#app-id")!;
+const appR2KeyInput = document.querySelector<HTMLInputElement>("#app-r2key")!;
 const appSubmitBtn = document.querySelector<HTMLButtonElement>("#app-submit")!;
 const appCancelBtn = document.querySelector<HTMLButtonElement>("#app-cancel")!;
+const appFileInput = document.querySelector<HTMLInputElement>("#app-file")!;
+const appUploadBtn = document.querySelector<HTMLButtonElement>("#app-upload-btn")!;
+const appUploadProgress = document.querySelector<HTMLElement>("#app-upload-progress")!;
+const appUploadProgressBar = document.querySelector<HTMLProgressElement>("#app-upload-progress-bar")!;
+const appUploadProgressText = document.querySelector<HTMLElement>("#app-upload-progress-text")!;
 
 const taskSequencesBody = document.querySelector<HTMLElement>("#task-sequences-body")!;
 const tsNewBtn = document.querySelector<HTMLButtonElement>("#ts-new-btn")!;
@@ -547,6 +553,9 @@ function resetAppForm() {
   appIdInput.disabled = false;
   appSubmitBtn.textContent = "Add app";
   appCancelBtn.hidden = true;
+  appUploadBtn.disabled = true;
+  appUploadProgress.hidden = true;
+  appUploadProgressBar.value = 0;
 }
 
 function resetUserForm() {
@@ -777,6 +786,10 @@ profileIsoFileInput.addEventListener("change", () => {
   profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
 });
 
+appFileInput.addEventListener("change", () => {
+  appUploadBtn.disabled = !appFileInput.files?.length;
+});
+
 const WIM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 // Parts upload in parallel rather than one at a time - sequential uploads
 // pay a full request round-trip's worth of latency per 8MB chunk before the
@@ -867,12 +880,19 @@ async function uploadPartWithRetry(
   throw lastError;
 }
 
+interface UploadUi {
+  progress: HTMLElement;
+  bar: HTMLProgressElement;
+  text: HTMLElement;
+}
+
 async function uploadPartsConcurrently(
   uploadId: string,
   key: string,
   totalChunks: number,
   source: UploadSource,
   alreadyUploaded: UploadedPart[],
+  ui: UploadUi,
   onProgress: (parts: UploadedPart[]) => void
 ): Promise<UploadedPart[]> {
   const parts: (UploadedPart | undefined)[] = new Array(totalChunks);
@@ -891,7 +911,7 @@ async function uploadPartsConcurrently(
       try {
         const chunk = source.slice(i * WIM_UPLOAD_CHUNK_BYTES, (i + 1) * WIM_UPLOAD_CHUNK_BYTES);
         parts[i] = await uploadPartWithRetry(uploadId, key, i + 1, chunk, () => {
-          profileWimProgressText.textContent = `Part ${i + 1} stalled, retrying... (${snapshot().length}/${totalChunks} done)`;
+          ui.text.textContent = `Part ${i + 1} stalled, retrying... (${snapshot().length}/${totalChunks} done)`;
         });
         onProgress(snapshot());
       } catch (err) {
@@ -908,17 +928,24 @@ async function uploadPartsConcurrently(
   return snapshot();
 }
 
-// Shared by both "upload a WIM directly" and "extract from an ISO" - the
-// only difference is where the byte source's data actually lives (a plain
-// File vs. a lazy slice() over install.wim's extents inside a local ISO).
-async function uploadWimSource(key: string, source: UploadSource, inputsToDisable: HTMLInputElement[]) {
+// Shared by every direct-to-R2 upload in the catalog (a profile's WIM, a WIM
+// extracted from an ISO, an app's installer/script) - only the byte source,
+// progress UI, and which buttons/inputs to lock during the upload differ.
+async function uploadFileToR2(
+  key: string,
+  source: UploadSource,
+  ui: UploadUi,
+  buttonsToDisable: HTMLButtonElement[],
+  inputsToDisable: HTMLInputElement[],
+  resetButtons: () => void,
+  onComplete: (key: string) => void
+): Promise<void> {
   errorEl.textContent = "";
-  profileWimUploadBtn.disabled = true;
-  profileIsoUploadBtn.disabled = true;
+  for (const btn of buttonsToDisable) btn.disabled = true;
   for (const input of inputsToDisable) input.disabled = true;
-  profileWimProgress.hidden = false;
-  profileWimProgressBar.value = 0;
-  profileWimProgressText.textContent = "Starting upload...";
+  ui.progress.hidden = false;
+  ui.bar.value = 0;
+  ui.text.textContent = "Starting upload...";
 
   const totalChunks = Math.ceil(source.size / WIM_UPLOAD_CHUNK_BYTES);
   try {
@@ -926,33 +953,39 @@ async function uploadWimSource(key: string, source: UploadSource, inputsToDisabl
     const uploadId = resumable ? resumable.uploadId : (await api.createUpload(key)).uploadId;
     const alreadyUploaded = resumable?.parts ?? [];
     if (resumable) {
-      profileWimProgressText.textContent = `Resuming upload (${alreadyUploaded.length}/${totalChunks} parts already done)...`;
+      ui.text.textContent = `Resuming upload (${alreadyUploaded.length}/${totalChunks} parts already done)...`;
     }
 
-    const parts = await uploadPartsConcurrently(uploadId, key, totalChunks, source, alreadyUploaded, (done) => {
+    const parts = await uploadPartsConcurrently(uploadId, key, totalChunks, source, alreadyUploaded, ui, (done) => {
       saveUploadProgress({ uploadId, key, size: source.size, parts: done });
       const percent = Math.round((done.length / totalChunks) * 100);
-      profileWimProgressBar.value = percent;
-      profileWimProgressText.textContent = `Uploading... ${percent}% (${done.length}/${totalChunks})`;
+      ui.bar.value = percent;
+      ui.text.textContent = `Uploading... ${percent}% (${done.length}/${totalChunks})`;
     });
     await api.completeUpload(uploadId, key, parts);
     clearUploadProgress(key);
-    profileInstallWimInput.value = key;
-    profileWimProgressText.textContent = "Upload complete.";
+    onComplete(key);
+    ui.text.textContent = "Upload complete.";
   } catch (err) {
     // Deliberately not aborting the R2-side multipart upload here - parts
     // already uploaded stay valid, and the saved progress above lets
     // re-selecting the same file resume from where this left off instead of
     // starting a multi-GB upload over from scratch.
-    profileWimProgress.hidden = true;
+    ui.progress.hidden = true;
     showError(
       new Error(`${err instanceof Error ? err.message : String(err)} - re-select the same file to resume where it left off.`)
     );
   } finally {
     for (const input of inputsToDisable) input.disabled = false;
-    profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
-    profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
+    resetButtons();
   }
+}
+
+const profileUploadUi: UploadUi = { progress: profileWimProgress, bar: profileWimProgressBar, text: profileWimProgressText };
+
+function resetProfileUploadButtons() {
+  profileWimUploadBtn.disabled = !profileWimFileInput.files?.length;
+  profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
 }
 
 profileWimUploadBtn.addEventListener("click", async () => {
@@ -964,7 +997,17 @@ profileWimUploadBtn.addEventListener("click", async () => {
     return;
   }
   const key = `${profileId}/sources/${file.name}`;
-  await uploadWimSource(key, file, [profileWimFileInput]);
+  await uploadFileToR2(
+    key,
+    file,
+    profileUploadUi,
+    [profileWimUploadBtn, profileIsoUploadBtn],
+    [profileWimFileInput, profileIsoFileInput],
+    resetProfileUploadButtons,
+    (k) => {
+      profileInstallWimInput.value = k;
+    }
+  );
 });
 
 profileIsoUploadBtn.addEventListener("click", async () => {
@@ -977,6 +1020,7 @@ profileIsoUploadBtn.addEventListener("click", async () => {
   }
 
   errorEl.textContent = "";
+  profileWimUploadBtn.disabled = true;
   profileIsoUploadBtn.disabled = true;
   profileIsoFileInput.disabled = true;
   profileWimProgress.hidden = false;
@@ -985,13 +1029,51 @@ profileIsoUploadBtn.addEventListener("click", async () => {
   try {
     const wim = await findWindowsWimInIso(file);
     const key = `${profileId}/sources/${wim.name}`;
-    await uploadWimSource(key, wim, [profileIsoFileInput]);
+    await uploadFileToR2(
+      key,
+      wim,
+      profileUploadUi,
+      [profileWimUploadBtn, profileIsoUploadBtn],
+      [profileIsoFileInput],
+      resetProfileUploadButtons,
+      (k) => {
+        profileInstallWimInput.value = k;
+      }
+    );
   } catch (err) {
+    // Only findWindowsWimInIso throws past this point - uploadFileToR2
+    // reports its own failures via showError and never rethrows.
     profileWimProgress.hidden = true;
     showError(err);
+    resetProfileUploadButtons();
     profileIsoFileInput.disabled = false;
-    profileIsoUploadBtn.disabled = !profileIsoFileInput.files?.length;
   }
+});
+
+const appUploadUi: UploadUi = { progress: appUploadProgress, bar: appUploadProgressBar, text: appUploadProgressText };
+
+appUploadBtn.addEventListener("click", async () => {
+  const file = appFileInput.files?.[0];
+  if (!file) return;
+  const appId = appIdInput.value.trim();
+  if (!appId) {
+    showError(new Error("Enter an app ID above before uploading a file."));
+    return;
+  }
+  const key = `apps/${appId}/${file.name}`;
+  await uploadFileToR2(
+    key,
+    file,
+    appUploadUi,
+    [appUploadBtn],
+    [appFileInput],
+    () => {
+      appUploadBtn.disabled = !appFileInput.files?.length;
+    },
+    (k) => {
+      appR2KeyInput.value = k;
+    }
+  );
 });
 
 afNewBtn.addEventListener("click", async () => {

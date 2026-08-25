@@ -44,21 +44,27 @@ function timingSafeEqual(a: string, b: string): boolean {
 /**
  * Verifies a username/password pair against the technicians table. Used by
  * the JSON deploy API (worker/src/routes/deploy.ts), which takes credentials
- * from a request body.
+ * from a request body. The username match is case-insensitive (COLLATE
+ * NOCASE) - technicians shouldn't have to remember exact capitalization to
+ * sign in. Returns the *stored* username on success (not necessarily the
+ * same casing the caller typed), so callers record/display the canonical
+ * form consistently regardless of how a given technician happened to type
+ * it that day - not a boolean, since "was this valid" and "what's their
+ * canonical username" are both needed by every caller.
  */
 export async function verifyTechnicianCredentials(
   db: Bindings["DB"],
   pepper: string,
   username: string,
   password: string
-): Promise<boolean> {
+): Promise<string | null> {
   const row = await db
-    .prepare(`SELECT password_hash, salt FROM technicians WHERE username = ?1`)
+    .prepare(`SELECT username, password_hash, salt FROM technicians WHERE username = ?1 COLLATE NOCASE`)
     .bind(username)
-    .first<{ password_hash: string; salt: string }>();
-  if (!row) return false;
+    .first<{ username: string; password_hash: string; salt: string }>();
+  if (!row) return null;
   const computed = await hashTechnicianPassword(pepper, row.salt, password);
-  return timingSafeEqual(computed, row.password_hash);
+  return timingSafeEqual(computed, row.password_hash) ? row.username : null;
 }
 
 /**
@@ -68,9 +74,10 @@ export async function verifyTechnicianCredentials(
  * expire. Returns null if the account no longer exists.
  */
 export async function getTechnicianRole(db: Bindings["DB"], username: string): Promise<Role | null> {
-  const row = await db.prepare(`SELECT role FROM technicians WHERE username = ?1`).bind(username).first<{
-    role: Role;
-  }>();
+  const row = await db
+    .prepare(`SELECT role FROM technicians WHERE username = ?1 COLLATE NOCASE`)
+    .bind(username)
+    .first<{ role: Role }>();
   return row?.role ?? null;
 }
 

@@ -485,6 +485,13 @@
         margin-bottom: var(--space-5);
       }
 
+      /* text-align only centers inline content - .brand-logo is a block-level
+         <img>, so it needs its own centering rather than inheriting this. */
+      body.login-screen .brand-logo {
+        margin-left: auto;
+        margin-right: auto;
+      }
+
       body.login-screen header p {
         max-width: 32ch;
       }

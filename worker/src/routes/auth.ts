@@ -13,11 +13,11 @@ authRoute.post("/login", async (c) => {
   if (!body?.username || !body.password) {
     return c.json({ error: "username and password are required" }, 400);
   }
-  const valid = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
-  if (!valid) {
+  const username = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
+  if (!username) {
     return c.json({ error: "invalid credentials" }, 401);
   }
-  const token = await signSessionToken(c.env.PASSWORD_PEPPER, body.username, SESSION_TTL_SECONDS);
+  const token = await signSessionToken(c.env.PASSWORD_PEPPER, username, SESSION_TTL_SECONDS);
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     secure: true,
@@ -25,8 +25,8 @@ authRoute.post("/login", async (c) => {
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
-  const role = await getTechnicianRole(c.env.DB, body.username);
-  return c.json({ username: body.username, role });
+  const role = await getTechnicianRole(c.env.DB, username);
+  return c.json({ username, role });
 });
 
 authRoute.post("/logout", (c) => {

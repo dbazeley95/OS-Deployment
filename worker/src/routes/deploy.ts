@@ -72,8 +72,8 @@ deployRoute.post("/auth", async (c) => {
   if (!body.username || !body.password) {
     return c.json({ error: "username and password are required" }, 400);
   }
-  const valid = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
-  if (!valid) {
+  const validUsername = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
+  if (!validUsername) {
     return c.json({ error: "invalid technician credentials" }, 401);
   }
 
@@ -126,8 +126,8 @@ deployRoute.post("/select", async (c) => {
   if (!body.username || !body.password) {
     return c.json({ error: "username and password are required" }, 400);
   }
-  const valid = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
-  if (!valid) {
+  const username = await verifyTechnicianCredentials(c.env.DB, c.env.PASSWORD_PEPPER, body.username, body.password);
+  if (!username) {
     return c.json({ error: "invalid technician credentials" }, 401);
   }
 
@@ -150,8 +150,8 @@ deployRoute.post("/select", async (c) => {
   }
 
   await resolveOrCreateJob(c.env.DB, mac, profile.id, {
-    technician: body.username,
-    log: `selected via WinPE by ${body.username}`,
+    technician: username,
+    log: `selected via WinPE by ${username}`,
     taskSequenceId: body.taskSequenceId,
     domainJoin: Boolean(body.domainJoin),
     domain: body.domainJoin ? body.domain : undefined,

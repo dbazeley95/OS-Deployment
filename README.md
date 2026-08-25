@@ -41,6 +41,9 @@ diagram of a deployment end to end.
   R2 on every boot - not baked into the image), `PostAction.ps1` (runs at
   first logon).
 - `boot/profiles/` — the Windows unattend answer files.
+- `boot/drivers/` — no code here, just a guide (`README.md`) for the
+  optional MDT-style driver-injection file share `DeployGui.ps1` can pull
+  from - deliberately not R2, since driver packs are large.
 - `scripts/upload-image.sh` — pushes a local boot file/WIM/script into the
   R2 images bucket. (`boot/winpe/*.ps1` is the exception — synced to R2
   automatically on push, see `.github/workflows/sync-winpe-scripts.yml`.)

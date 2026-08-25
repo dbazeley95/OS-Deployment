@@ -25,6 +25,16 @@ Add-Type -AssemblyName System.Drawing
 # Set this to your Worker's URL if it ever differs from the deployed one.
 $WorkerBase = "https://api.osd.xcet.uk"
 
+# UNC path to the root of an MDT-style "Total Control" driver-pack file
+# share - not R2, deliberately, since driver packs are large and this
+# avoids that storage/egress cost entirely. Leave blank to skip driver
+# injection altogether (e.g. no share set up yet). Read using the same
+# domain-join credentials as a fileshare-sourced install.wim - requires
+# "Join a domain" to be enabled in the wizard. See boot/drivers/README.md
+# for the folder convention this expects and how to source driver packs
+# per manufacturer (only Dell is actually injected today - see there).
+$DriversShareRoot = ""
+
 # Shared look - EnableVisualStyles above only re-themes buttons/checkboxes/
 # comboboxes; font and colors still need to be set per form/control.
 $UiFont = New-Object System.Drawing.Font("Segoe UI", 9)
@@ -214,6 +224,33 @@ function Confirm-FileHash {
     if ($actual -ine $expected) {
         throw "Integrity check failed for $Url - expected $expected, got $actual. The download may be corrupted or incomplete."
     }
+}
+
+# net use (not New-SmbMapping) for compatibility - the SmbShare module
+# isn't guaranteed present in a minimal WinPE image, while net.exe is a
+# core tool every WinPE build already has. The password is briefly
+# visible as a process argument as a result - a similar, already-accepted
+# tradeoff to how this script already handles domain-join credentials
+# elsewhere. Quoted explicitly (not just a bare variable/subexpression)
+# so a password or username containing spaces is passed as one argument
+# to net.exe, not word-split apart. Returns the connected share root
+# (\\server\share) so the caller can disconnect the same thing later.
+function Connect-DomainFileShare {
+    param([string]$SharePath, [string]$DomainUsername, [string]$DomainPassword)
+    if ($SharePath -notmatch '^(\\\\[^\\]+\\[^\\]+)') {
+        throw "File share path '$SharePath' doesn't look like a valid UNC path (\\server\share\...)."
+    }
+    $shareRoot = $matches[1]
+    $netUseOutput = net use $shareRoot "$DomainPassword" "/user:$DomainUsername" 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "Couldn't connect to file share '$shareRoot' (exit code $LASTEXITCODE). Output:`r`n$netUseOutput"
+    }
+    return $shareRoot
+}
+
+function Disconnect-DomainFileShare {
+    param([string]$ShareRoot)
+    net use $ShareRoot /delete /y 2>&1 | Out-Null
 }
 
 # --- Step 1: technician login -------------------------------------------
@@ -711,24 +748,9 @@ assign letter=W
                 if (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
                     throw "This task sequence's operating system is served from a network file share, which needs domain credentials to read. Go back and enable 'Join a domain', then try again."
                 }
-                if ($Deployment.fileSharePath -notmatch '^(\\\\[^\\]+\\[^\\]+)') {
-                    throw "Operating system file share path '$($Deployment.fileSharePath)' doesn't look like a valid UNC path (\\server\share\...)."
-                }
-                $shareRoot = $matches[1]
-                Write-Log "Connecting to $shareRoot..."
-                # net use (not New-SmbMapping) for compatibility - the SmbShare
-                # module isn't guaranteed present in a minimal WinPE image,
-                # while net.exe is a core tool every WinPE build already has.
-                # The password is briefly visible as a process argument as a
-                # result - a similar, already-accepted tradeoff to how this
-                # script already handles domain-join credentials elsewhere.
-                # Quoted explicitly (not just a bare variable/subexpression)
-                # so a password or username containing spaces is passed as
-                # one argument to net.exe, not word-split apart.
-                $netUseOutput = net use $shareRoot "$($Deployment.domainPassword)" "/user:$($Deployment.domainUsername)" 2>&1 | Out-String
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Couldn't connect to file share '$shareRoot' (exit code $LASTEXITCODE). Output:`r`n$netUseOutput"
-                }
+                Write-Log "Connecting to the operating system file share..."
+                $shareRoot = Connect-DomainFileShare -SharePath $Deployment.fileSharePath `
+                    -DomainUsername $Deployment.domainUsername -DomainPassword $Deployment.domainPassword
                 try {
                     Write-Log "Downloading install.wim from file share..."
                     $totalBytes = (Get-Item -LiteralPath $Deployment.fileSharePath).Length
@@ -740,7 +762,7 @@ assign letter=W
                         $sourceStream.Close()
                     }
                 } finally {
-                    net use $shareRoot /delete /y 2>&1 | Out-Null
+                    Disconnect-DomainFileShare -ShareRoot $shareRoot
                 }
             } else {
                 Write-Log "Downloading install.wim..."
@@ -834,6 +856,72 @@ assign letter=W
             }
             Remove-Item "W:\install.wim"
             $progressBar.Value = 85
+
+            # Driver injection is entirely optional and best-effort: a
+            # missing/failed driver pack should never abort an otherwise-
+            # successful OS install (unlike diskpart/dism/bcdboot above,
+            # which the deployment genuinely can't proceed without) - it's
+            # something to fix from Device Manager after first boot if it
+            # doesn't work out. Wrapped in its own try/catch, deliberately
+            # NOT allowed to propagate into the outer one.
+            if ($DriversShareRoot) {
+                try {
+                    Write-Log "Checking for a driver pack..."
+                    $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+                    $manufacturer = switch -Wildcard ($cs.Manufacturer) {
+                        "*Dell*" { "Dell" }
+                        default { $cs.Manufacturer.Trim() }
+                    }
+                    # Sanitized defensively in case WMI ever returns something
+                    # with characters that aren't valid in a Windows path -
+                    # real model strings are normally plain text, but this is
+                    # cheap insurance against a malformed file/share path.
+                    $model = ($cs.Model.Trim()) -replace '[\\/:*?"<>|]', ''
+
+                    # Only Dell driver packs (plain .cab, directly usable by
+                    # dism) are actually injected today - HP/Lenovo ship
+                    # self-extracting .exe SoftPaqs instead, needing different
+                    # extraction handling not yet built (see
+                    # boot/drivers/README.md). Looking specifically for a
+                    # .cab means an HP/Lenovo folder someone already dropped
+                    # there is safely skipped rather than mishandled.
+                    if ($manufacturer -ne "Dell") {
+                        Write-Log "$manufacturer driver injection isn't supported yet - skipping."
+                    } elseif (-not $Deployment.domainUsername -or -not $Deployment.domainPassword) {
+                        Write-Log "No domain credentials collected - skipping driver injection (enable 'Join a domain' to read the driver share)."
+                    } else {
+                        $driverCabPath = "$DriversShareRoot\$($Deployment.profile)\$manufacturer\$model.cab"
+                        Write-Log "Connecting to the driver share..."
+                        $shareRoot = Connect-DomainFileShare -SharePath $DriversShareRoot `
+                            -DomainUsername $Deployment.domainUsername -DomainPassword $Deployment.domainPassword
+                        try {
+                            if (-not (Test-Path -LiteralPath $driverCabPath)) {
+                                Write-Log "No driver pack found at $driverCabPath - skipping (normal if none has been uploaded for this model yet)."
+                            } else {
+                                Write-Log "Found a driver pack for $manufacturer $model - expanding..."
+                                $driverExtractPath = "$env:TEMP\drivers"
+                                New-Item -ItemType Directory -Force -Path $driverExtractPath | Out-Null
+                                $expandOutput = expand.exe -F:* "$driverCabPath" "$driverExtractPath" 2>&1 | Out-String
+                                if ($LASTEXITCODE -ne 0) {
+                                    throw "Failed to expand driver pack '$driverCabPath' (exit code $LASTEXITCODE). Output:`r`n$expandOutput"
+                                }
+                                Write-Log "Injecting drivers into the offline image..."
+                                $dismDriverOutput = dism /Image:W:\ /Add-Driver /Driver:"$driverExtractPath" /Recurse 2>&1 | Out-String
+                                if ($LASTEXITCODE -ne 0) {
+                                    throw "dism /Add-Driver failed (exit code $LASTEXITCODE). Output:`r`n$dismDriverOutput"
+                                }
+                                Write-Log "Drivers injected."
+                                Remove-Item -Recurse -Force $driverExtractPath -ErrorAction SilentlyContinue
+                            }
+                        } finally {
+                            Disconnect-DomainFileShare -ShareRoot $shareRoot
+                        }
+                    }
+                } catch {
+                    Write-Log "WARNING: driver injection failed, continuing without it: $($_.Exception.Message)"
+                }
+            }
+            $progressBar.Value = 88
 
             Write-Log "Writing answer file and post-action config..."
             New-Item -ItemType Directory -Force -Path "W:\Windows\Panther" | Out-Null

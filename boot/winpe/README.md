@@ -113,6 +113,19 @@ used to forge (e.g. baked into the WinPE image) - not implemented here,
 since the same-origin check already covers the failure mode that's
 actually been seen in practice.
 
+## Driver injection (optional)
+
+`DeployGui.ps1` can also inject drivers offline, straight after applying
+the WIM and before writing boot files - the same point MDT injects them,
+so boot-critical drivers are present at first boot. This pulls from a
+plain Windows file share (`$DriversShareRoot` at the top of the script,
+blank/disabled by default) rather than R2, since driver packs are large
+enough that storing them in R2 would be a real cost. See
+`../drivers/README.md` for the folder convention and how to source driver
+packs per manufacturer - only Dell is wired up today; HP and Lenovo are
+documented there too, but need different (self-extracting) pack handling
+not yet built.
+
 ## Deliver it — pick one (or both)
 
 ### Via WDS

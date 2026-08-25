@@ -156,19 +156,23 @@ USB stick). A GUI window (`DeployGui.ps1`, fetched fresh from R2 - always
 reflects the current catalog) prompts for technician credentials, a
 hostname, whether to join a domain (and if so, the domain name plus admin
 credentials, never sent to the cloud), and a task sequence to install. It
-applies the image with a live progress log; at first logon, the
-generalized `PostAction.ps1` joins the domain non-interactively (no
+applies the image with a live progress log; once Windows reaches the
+desktop for the first time, the generalized `PostAction.ps1` shows its own
+small status window while it joins the domain non-interactively (no
 prompt - the wizard already collected everything) and runs the task
-sequence's steps in order.
+sequence's steps in order, one row at a time.
 
 The one prompt that's skipped is on a **retry**: if the same machine
 already got partway through a deployment, the hostname/task-sequence
 questions are skipped in favor of what was already chosen - domain-join is
 always re-confirmed regardless, since credentials are never persisted.
 
-Watch the job flip from `pending` -> `booted` -> `complete` in the admin
-UI's log, along with which technician triggered it, the task sequence
-used, and whether it joined a domain.
+Watch the job flip from `pending` -> `booted` -> `installing` ->
+`complete` (or `failed`, if a domain join or app install didn't succeed)
+in the admin UI's log, along with which technician triggered it, the task
+sequence used, and whether it joined a domain. `complete`/`failed` only
+land once `PostAction.ps1` actually finishes everything - not the moment
+Windows reaches first logon.
 
 ## Security
 

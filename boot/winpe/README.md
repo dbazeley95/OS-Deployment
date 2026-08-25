@@ -43,6 +43,19 @@ The hostname gets recorded on the device (`devices.hostname` in D1) and
 substituted into the answer file's `<ComputerName>` placeholder before
 it's written to disk - see `boot/profiles/*/autounattend.xml`.
 
+## Post-imaging status
+
+`PostAction.ps1` shows its own small status GUI once Windows reaches the
+desktop for the first time (a status pending/done/failed per work item -
+domain join, then each task sequence step) - see "Post-imaging action" in
+`../profiles/windows-11-25h2/README.md` for why it's launched via a
+`RunOnce` registry entry rather than directly from `FirstLogonCommands`.
+This also fixed a real gap: the job's status now only reports `complete`
+once every step has actually finished (`installing` while it's still
+working, `failed` if anything didn't succeed) - it used to report
+`complete` the instant Windows reached first logon, before any of this
+had even started.
+
 ## Build the image (Windows machine with the free Windows ADK + WinPE add-on)
 
 ```powershell

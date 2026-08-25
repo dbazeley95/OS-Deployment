@@ -66,7 +66,13 @@ async function deploymentPayload(
     // fixed action PostAction.ps1 already knows how to run by id (no file).
     steps: sequence.steps.map((step) =>
       step.kind === "app"
-        ? { kind: "app" as const, label: step.label, installKind: step.installKind, appUrl: imageUrl(origin, step.r2Key!) }
+        ? {
+            kind: "app" as const,
+            label: step.label,
+            installKind: step.installKind,
+            installArgs: step.installArgs ?? null,
+            appUrl: imageUrl(origin, step.r2Key!),
+          }
         : { kind: "builtin" as const, label: step.label, actionId: step.id }
     ),
   };

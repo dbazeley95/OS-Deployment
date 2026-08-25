@@ -118,7 +118,8 @@ function parseAppInput(body: unknown): AppInput | { error: string } {
   if (!b.installKind || !INSTALL_KINDS.includes(b.installKind)) {
     return { error: `installKind must be one of: ${INSTALL_KINDS.join(", ")}` };
   }
-  return { id: b.id, label: b.label, r2Key: b.r2Key, installKind: b.installKind };
+  const installArgs = typeof b.installArgs === "string" ? b.installArgs.trim() : "";
+  return { id: b.id, label: b.label, r2Key: b.r2Key, installKind: b.installKind, installArgs: installArgs || null };
 }
 
 catalogRoute.get("/apps", async (c) => c.json(await listApps(c.env.DB)));

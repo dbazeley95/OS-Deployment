@@ -310,10 +310,33 @@ for ($i = 0; $i -lt $workItems.Count; $i++) {
             $dest = Join-Path $env:TEMP ("step-" + [guid]::NewGuid().ToString("N") + "." + $ext)
             Invoke-WebRequest -Uri $step.appUrl -OutFile $dest
             switch ($step.installKind) {
-                "msi" { Start-Process msiexec.exe -ArgumentList "/i `"$dest`" /quiet /norestart" -Wait }
-                "exe" { Start-Process $dest -ArgumentList "/quiet /norestart" -Wait }
-                "script" { powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dest }
+                "msi" {
+                    # There's no msiexec property override without installArgs
+                    # set, unlike "exe" below - /i and the msi path are always
+                    # required, so only the trailing switches are overridable.
+                    $msiArgs = if ($step.installArgs) { $step.installArgs } else { "/quiet /norestart" }
+                    $proc = Start-Process msiexec.exe -ArgumentList "/i `"$dest`" $msiArgs" -Wait -PassThru
+                }
+                "exe" {
+                    # No switch works across every EXE installer (NSIS: /S,
+                    # InstallShield: /s /v"/qn", Inno Setup: /VERYSILENT, ...) -
+                    # "/quiet /norestart" is only a guess for installers built
+                    # on an MSI wrapper. Without the right one, most installers
+                    # just show their normal interactive UI and sit there
+                    # waiting for a click that never comes on an unattended
+                    # build - which looks identical to this step hanging.
+                    $exeArgs = if ($step.installArgs) { $step.installArgs } else { "/quiet /norestart" }
+                    $proc = Start-Process $dest -ArgumentList $exeArgs -Wait -PassThru
+                }
+                "script" { powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dest; $proc = $null }
                 default { throw "Unknown install kind '$($step.installKind)'." }
+            }
+            # 3010 = success, reboot required (standard MSI convention that
+            # plenty of non-MSI installers also follow) - anything else non-
+            # zero means the install didn't actually happen, even though
+            # Start-Process itself didn't throw.
+            if ($proc -and $proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+                throw "Installer exited with code $($proc.ExitCode)."
             }
         }
         Set-RowStatus -Row $row -Text "Done" -Color $OkColor

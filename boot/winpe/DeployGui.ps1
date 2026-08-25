@@ -819,7 +819,20 @@ assign letter=W
             $dismLogPath = "X:\dism-apply.log"
             $dismPsi = New-Object System.Diagnostics.ProcessStartInfo
             $dismPsi.FileName = "dism.exe"
-            $dismPsi.Arguments = "/Apply-Image /ImageFile:`"W:\install.wim`" /Index:$($Deployment.imageIndex) /ApplyDir:`"W:\`" /LogPath:`"$dismLogPath`""
+            # /ApplyDir is deliberately "W:" with no trailing backslash, not
+            # "W:\" - a single backslash immediately before a closing quote
+            # is parsed as an escaped literal quote (an odd backslash count
+            # before a quote does this per the standard Windows argv-quoting
+            # rule), not a real string terminator, which silently swallows
+            # everything after it (here, /LogPath) into one garbled
+            # argument. Harmless as long as /ApplyDir:"W:\" was the very
+            # last thing on the command line (as it used to be), but broke
+            # the moment /LogPath was added after it - producing exactly
+            # the exit-code-123 (invalid name) failure with no log file
+            # ever written that was seen on real hardware. A bare drive
+            # letter with no trailing backslash means the same thing (the
+            # drive's root) and has no such ambiguity.
+            $dismPsi.Arguments = "/Apply-Image /ImageFile:`"W:\install.wim`" /Index:$($Deployment.imageIndex) /ApplyDir:`"W:`" /LogPath:`"$dismLogPath`""
             $dismPsi.UseShellExecute = $false
             $dismPsi.CreateNoWindow = $true
             $dismProcess = New-Object System.Diagnostics.Process

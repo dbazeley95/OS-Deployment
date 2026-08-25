@@ -7,7 +7,7 @@ export type Bindings = {
   PASSWORD_PEPPER: string;
 };
 
-/** Set by requireSession (worker/src/index.ts) on every authenticated request. */
+/** Set by requireSession (worker/src/lib/auth.ts) on every authenticated request. */
 export type Variables = { username: string; role: Role };
 
 export type JobStatus = "pending" | "booted" | "installing" | "complete" | "failed";

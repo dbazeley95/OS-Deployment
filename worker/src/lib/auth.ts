@@ -1,11 +1,12 @@
 import { createMiddleware } from "hono/factory";
+import { getCookie } from "hono/cookie";
 import type { Bindings, Variables } from "../types";
 
 /**
  * Admin (full CRUD everywhere, including managing other users),
  * technician (create/edit catalog items, no delete, no user management
  * beyond their own password), beginner (read-only everywhere, own
- * password only). See worker/src/index.ts's requireRole middleware.
+ * password only). See this file's requireRole middleware.
  */
 export type Role = "admin" | "technician" | "beginner";
 
@@ -82,8 +83,8 @@ export async function getTechnicianRole(db: Bindings["DB"], username: string): P
 }
 
 /**
- * Applied per-route in routes/catalog.ts on top of the requireSession
- * middleware in index.ts. Built with Hono's createMiddleware() rather than a
+ * Applied per-route in routes/catalog.ts on top of this file's requireSession
+ * middleware (below). Built with Hono's createMiddleware() rather than a
  * hand-written (c, next) => ... function - that's what keeps the route's
  * own path-param typing (e.g. c.req.param("id") being `string` not `string |
  * undefined`) intact for the handler that follows it in the chain.
@@ -137,3 +138,23 @@ export async function verifySessionToken(pepper: string, token: string | undefin
   if (parsed.exp < Math.floor(Date.now() / 1000)) return null;
   return parsed.u;
 }
+
+/**
+ * Gates the admin UI's own API behind a technician login. Applied as a
+ * blanket path-prefix middleware for /api/devices/* and /api/catalog/* in
+ * index.ts, and per-route in routes/jobs.ts (only the admin-facing routes -
+ * NOT the by-mac phone-home endpoint, which is called by devices in the
+ * field with no browser session to present). Role is looked up fresh from
+ * D1 on every request (not embedded in the session token) so a role change
+ * or account deletion takes effect immediately, not just once the token
+ * expires.
+ */
+export const requireSession = createMiddleware<{ Bindings: Bindings; Variables: Variables }>(async (c, next) => {
+  const username = await verifySessionToken(c.env.PASSWORD_PEPPER, getCookie(c, "session"));
+  if (!username) return c.json({ error: "login required" }, 401);
+  const role = await getTechnicianRole(c.env.DB, username);
+  if (!role) return c.json({ error: "login required" }, 401); // account deleted since the token was issued
+  c.set("username", username);
+  c.set("role", role);
+  await next();
+});
